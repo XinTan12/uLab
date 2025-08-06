@@ -1,0 +1,9 @@
+# 忽略所有构建目录
+build/
+
+# 忽略 Qt Creator 用户配置文件
+*.pro.user
+*.pro.user.*
+
+# 忽略 macOS 临时文件
+.DS_Store
