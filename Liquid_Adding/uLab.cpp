@@ -774,6 +774,8 @@ void ULab::MoveStage(DEVICE_CODE stage_type, int speed_x, int speed_y, int dwell
         }
     }
     emit SendMessage(QString("[%1] 全板遍历完成").arg(stage_type == LOW_STAGE_CODE ? "低精度" : "高精度"));
+
+    emit AddLiquidCompleted();
 }
 
 
@@ -871,57 +873,3 @@ bool ULab::waitForPosition(DEVICE_CODE stage_type, AXIS axis, uint16_t target_po
 
     return position_reached; // position_reached只在成功时为true
 }
-
-
-// ******************************* 多通道换液流程 *********************************
-
-
-void ULab::Pump_Peristaltic(uint8_t id, bool direction, double flow_speed, double volume_ul)
-{
-    // 速度单位转换因子：每 1 µL/s 的流速对应多少设备速度单位 (例如 2.0 RPMs per µL/s)
-    const double SPEED_UNIT_CONVERSION_FACTOR = 2.0;
-
-
-    if (flow_speed <= 0) {
-        emit SendMessage("  > 错误：流速为0，无法计算时长。");
-        return;
-    }
-    uint16_t hardware_speed = static_cast<uint16_t>(flow_speed * SPEED_UNIT_CONVERSION_FACTOR);
-    uint duration_ms = static_cast<uint>((volume_ul / flow_speed) * 1000.0);
-
-    emit SendMessage(QString("  > 参数: 流速=%1uL/s, 体积=%2uL, 计算时长=%3ms")
-                         .arg(flow_speed).arg(volume_ul).arg(duration_ms));
-
-    SetSpeed(hardware_speed, id);
-    Rotate(true, direction, id);
-    MSleep(duration_ms);
-    Rotate(false, direction, id);
-}
-
-void ULab::Pump_in(const Setconfig_Pump_in& config)
-{
-    // 阀门切换延时
-    const int VALVE_SWITCH_DELAY_MS = 1000;
-
-    // 从开始到最终加液端口的液体“死体积”大小
-    const int DEAD_VOLUME = 500;
-
-    emit SendMessage(QString("\n[执行动作]: %1").arg(config.action_name));
-
-    emit SendMessage(QString("  > 配置线路: [源] %1号切换阀-%2通道 --> [%3号泵] --> [目标] %4号切换阀-%5通道")
-                         .arg(config.valve_id_in).arg(config.channel_in)
-                         .arg(config.pump_id)
-                         .arg(config.valve_id_out).arg(config.channel_out));
-
-    GotoHole(0x00, config.channel_in, config.valve_id_in);
-    MSleep(VALVE_SWITCH_DELAY_MS);
-    GotoHole(0x00, config.channel_out, config.valve_id_out);
-    MSleep(VALVE_SWITCH_DELAY_MS);
-
-    Pump_Peristaltic(config.pump_id, config.isForward, config.speed, config.volume_ul+DEAD_VOLUME);
-
-    emit SendMessage(QString("  > 动作 '%1' 完成.").arg(config.action_name));
-}
-
-
-// ******************************************************************************
