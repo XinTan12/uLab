@@ -18,6 +18,8 @@ int main(int argc, char *argv[])
         qDebug().noquote() << msg;           // 使用 noquote() 可以去掉字符串两边的引号，输出更美观
     });
 
+    QObject::connect(&controller, &ULab::AddLiquidCompleted, &a, QCoreApplication::quit);
+
     if(!controller.InitPort("/dev/tty.usbserial-140"))   // Windows: COMx    // mac: /dev/tty.usbserial-140
     {
         qDebug() << "串口连接失败，程序退出。";
@@ -69,131 +71,6 @@ int main(int argc, char *argv[])
     // *********************************************************************************
 
 
-
-    // *********************************************************************************
-    //                                多通道换液测试
-    // *********************************************************************************
-
-
-
-    // ======================================================================
-    // ====================== 1. 用户配置区 (配置controller对象) ===============
-    // ======================================================================
-
-
-    QMap<QString, Setconfig_Pump_in> actionLibrary;
-
-    actionLibrary["PBS"] = {"预热PBS洗涤1次",                      // {action_name,
-                            1, 1,                              // valve_id_in(连接溶液的切换阀ID), channel_in(对应的通道号),
-                            1, 10.0, true,                     // pump_id(蠕动泵ID), speed(期望的抽液速度，uL/s),  isForward(泵的转动方向),
-                            2, 1,                              // valve_id_out(连接皿的切换阀ID), channel_out(对应的通道号),
-                            200.0 };                           // volume_ul(期望抽取的液体体积，uL) };
-
-    actionLibrary["gudingye"] = {"固定液RT固定15min",
-                                 1, 2,
-                                 1, 10.0, true,
-                                 2, 1,
-                                 200.0 };
-
-    actionLibrary["tongtouji"] = {"通透剂通透15min",
-                                  1, 3,
-                                  1, 10.0, true,
-                                  2, 1,
-                                  200.0 };
-
-    actionLibrary["fengbiye"] = {"封闭液RT封闭1h",
-                                 1, 4,
-                                 1, 10.0, true,
-                                 2, 1,
-                                 200.0 };
-
-    actionLibrary["kangti_xishi_1"] = {"抗体稀释液稀释（一抗），4℃过夜",
-                                       1, 5,
-                                       1, 10.0, true,
-                                       2, 1,
-                                       200.0 };
-
-    actionLibrary["kangti_xishi_2"] = {"抗体稀释液稀释（二抗），RT避光1h",
-                                       1, 6,
-                                       1, 10.0, true,
-                                       2, 1,
-                                       200.0 };
-
-
-
-    // ======================================================================
-
-
-
-    // ======================================================================
-    // =================== 2. 用户实验序列 (调用已配置的动作) ===================
-    // ======================================================================
-
-    //  QTimer::singleShot(1000, [&]() {
-
-    //     controller.Pump_in(actionLibrary["PBS"]);
-    //     MSleep(1000);
-
-    //              //Pump_Peristaltic(蠕动泵的ID, 泵的转动方向, 期望的抽液速度(uL/s), 期望抽取的液体体积(uL))
-    //     controller.Pump_Peristaltic(2, false, 20.0, 500.0);
-    //     qDebug() << "抽液完毕";
-
-    //     controller.Pump_in(actionLibrary["gudingye"]);
-    //     MSleep(1000);
-    //     controller.Pump_Peristaltic(2, false, 20.0, 500.0);
-    //     qDebug() << "抽液完毕";
-
-    //     controller.Pump_in(actionLibrary["PBS"]);
-    //     MSleep(1000);
-    //     controller.Pump_Peristaltic(2, false, 20.0, 500.0);
-    //     qDebug() << "抽液完毕";
-
-    //     controller.Pump_in(actionLibrary["tongtouji"]);
-    //     MSleep(1000);
-    //     controller.Pump_Peristaltic(2, false, 20.0, 500.0);
-    //     qDebug() << "抽液完毕";
-
-    //     controller.Pump_in(actionLibrary["PBS"]);
-    //     MSleep(1000);
-    //     controller.Pump_Peristaltic(2, false, 20.0, 500.0);
-    //     qDebug() << "抽液完毕";
-
-    //     controller.Pump_in(actionLibrary["fengbiye"]);
-    //     MSleep(1000);
-    //     controller.Pump_Peristaltic(2, false, 20.0, 500.0);
-    //     qDebug() << "抽液完毕";
-
-    //     controller.Pump_in(actionLibrary["kangti_xishi_1"]);
-    //     MSleep(1000);
-    //     controller.Pump_Peristaltic(2, false, 20.0, 500.0);
-    //     qDebug() << "抽液完毕";
-
-    //     controller.Pump_in(actionLibrary["PBS"]);
-    //     MSleep(1000);
-    //     controller.Pump_Peristaltic(2, false, 20.0, 500.0);
-    //     qDebug() << "抽液完毕";
-
-    //     controller.Pump_in(actionLibrary["kangti_xishi_2"]);
-    //     MSleep(1000);
-    //     controller.Pump_Peristaltic(2, false, 20.0, 500.0);
-    //     qDebug() << "抽液完毕";
-
-    //     controller.Pump_in(actionLibrary["PBS"]);
-    //     MSleep(1000);
-    //     controller.Pump_Peristaltic(2, false, 20.0, 500.0);
-    //     qDebug() << "抽液完毕";
-
-    //     qDebug() << "\n\n*** 实验执行完毕 ***";
-
-    // });
-
-    // *********************************************************************************
-
-
-    // QObject::connect(&controller, &ULab::EmergencyStopTriggered, [&]() {
-    //     qDebug() << "正在清理资源...";
-    //     QTimer::singleShot(1000, &a, &QCoreApplication::quit);
-    // });
 
     // 确保在应用退出前关闭端口，可以连接 aboutToQuit 信号
     QObject::connect(&a, &QCoreApplication::aboutToQuit, &controller, [&controller](){

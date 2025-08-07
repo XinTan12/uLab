@@ -130,6 +130,7 @@ signals:
     void UpdateFlow(uint flow);                                                             //通知主界面更新流量信息
 
     void EmergencyStopTriggered();
+    void AddLiquidCompleted();
 
 private slots:
     void RefreshPort();
