@@ -33,18 +33,6 @@ enum AXIS
     AXIS_Z = 0x11,
 };
 
-struct StageParams {
-    int rows;
-    int cols;
-    int x_step_um;      // X轴孔间距 (µm)
-    int y_step_um;      // Y轴孔间距 (µm)
-    uint16_t x_speed;   // X轴速度（单位：0.12mm/s）
-    uint16_t y_speed;   // Y轴速度
-    uint16_t z_speed;   // Z轴速度
-    int initial_offset_x_um; // 从位移台原点到A1孔的X方向距离(µm)
-    int initial_offset_y_um; // 从位移台原点到A1孔的Y方向距离
-    DEVICE_CODE code;
-};
 
 QByteArray CRCMDBS_GetValue(QByteArray msg);
 QString GetAxisName(AXIS axis);
@@ -74,10 +62,13 @@ public:
     bool InitPort(QString portName);
     void ClosePort();
 
+    void EmergencyStop();
+    void SendData(const QByteArray &data);
+
     // Pipet
     void Rotate(bool start = true, bool direction = true, uint8_t id = 1);
     void SetSpeed(uint16_t speed, uint8_t id = 1);
-    void GotoHole(uint8_t addr, uint8_t hole, uint8_t id = 1);
+    void GotoChannel(uint8_t addr, uint8_t hole, uint8_t id = 1);
 
     // xyz stages
     void Home(AXIS axis, DEVICE_CODE code = LOW_STAGE_CODE);
@@ -100,25 +91,6 @@ public:
     void PeristalticPumpRotate(bool start = true);                                          //气泵控制板连接的蠕动泵启动/停止
     void PeristalticPumpSetSpeed(uint16_t speed);                                           //气泵控制板连接的蠕动泵设置转速
     void SetSolenoidValve(uint8_t valves);
-
-
-    //低精度位移台运动控制
-    void MoveStage(DEVICE_CODE stage_type,                                                  // 根据输入参数定向移动
-                   QPoint start_pos,
-                   AXIS direction,
-                   bool positive,
-                   int steps,
-                   int speed_x = -1,
-                   int speed_y = -1,
-                   int dwell_ms = 1000);
-
-    void MoveStage(DEVICE_CODE stage_type,
-                   int speed_x = -1,
-                   int speed_y = -1,
-                   int dwell_ms = 1000);                                                       // 全板遍历
-
-    void EmergencyStop();
-    void SendData(const QByteArray &data);
 
     void Pump_in(const Setconfig_Pump_in& config);
     void Pump_Peristaltic(uint8_t id, bool direction, double flow_speed, double volume_ul);
@@ -174,16 +146,6 @@ private:
     QMap<DEVICE_CODE, QPoint> m_currentPos;
     QAtomicInt m_emergencyFlag{0}; // 原子操作的急停标志
 
-
-    bool waitForPosition(DEVICE_CODE stage_type, AXIS axis, uint16_t target_pos, int& last_pos, int timeout_ms = 10000);
-
-    // 设备参数配置
-    const QMap<DEVICE_CODE, StageParams> STAGE_CONFIG =
-        {
-            //                rows,cols, x_step, y_step, x_spd,y_spd,z_spd, offset_x, offset_y, code
-            {LOW_STAGE_CODE,  {8,   12,   4500,   4500,  20,   20,   100,   9500,     50000,    LOW_STAGE_CODE}},
-            {HIGH_STAGE_CODE, {8,   12,   450,    450,   20,   20,   20,    10000,    10000,    HIGH_STAGE_CODE}}
-        };
 
 };
 
