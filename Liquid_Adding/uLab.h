@@ -49,18 +49,6 @@ struct StageParams {
 QByteArray CRCMDBS_GetValue(QByteArray msg);
 QString GetAxisName(AXIS axis);
 
-struct Setconfig_Pump_in
-{
-    QString action_name;
-    uint8_t valve_id_in;
-    uint8_t channel_in;
-    uint8_t pump_id;
-    double speed;
-    bool isForward;
-    uint8_t valve_id_out;
-    uint8_t channel_out;
-    double volume_ul;
-};
 
 void MSleep(uint msec);             //非阻塞延时
 
@@ -92,16 +80,6 @@ public:
     void GetPressure();
     void GetFlow();
 
-    // Pump
-    void StartPump(uint16_t speed);
-    void StopPump();
-    void SetPressure(uint16_t pressure);
-    void SetFlow(uint16_t flow);
-    void PeristalticPumpRotate(bool start = true);                                          //气泵控制板连接的蠕动泵启动/停止
-    void PeristalticPumpSetSpeed(uint16_t speed);                                           //气泵控制板连接的蠕动泵设置转速
-    void SetSolenoidValve(uint8_t valves);
-
-
     //低精度位移台运动控制
     void MoveStage(DEVICE_CODE stage_type,                                                  // 根据输入参数定向移动
                    QPoint start_pos,
@@ -120,8 +98,15 @@ public:
     void EmergencyStop();
     void SendData(const QByteArray &data);
 
-    void Pump_in(const Setconfig_Pump_in& config);
-    void Pump_Peristaltic(uint8_t id, bool direction, double flow_speed, double volume_ul);
+
+    // Pump
+    void StartPump(uint16_t speed);
+    void StopPump();
+    void SetPressure(uint16_t pressure);
+    void SetFlow(uint16_t flow);
+    void PeristalticPumpRotate(bool start = true);                                          //气泵控制板连接的蠕动泵启动/停止
+    void PeristalticPumpSetSpeed(uint16_t speed);                                           //气泵控制板连接的蠕动泵设置转速
+    void SetSolenoidValve(uint8_t valves);
 
 signals:
     void SendMessage(QString msg);

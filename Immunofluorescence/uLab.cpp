@@ -81,10 +81,10 @@ void ULab::SetSpeed(uint16_t speed, uint8_t id)
     emit SendMessage("Set peristaltic pump speed to " + QString::number(speed));
 }
 
-void ULab::GotoHole(uint8_t addr, uint8_t hole, uint8_t id)
+void ULab::GotoChannel(uint8_t addr, uint8_t channel, uint8_t id)
 {
-    wrtCmdList.append(GenCMD(0x08, id, hole, addr));
-    emit SendMessage("Valve (Address:" + QString::number(addr) + " go to hole No." + QString::number(hole));
+    wrtCmdList.append(GenCMD(0x08, id, channel, addr));
+    emit SendMessage("Valve (ID:" + QString::number(id) + ") go to channel No." + QString::number(channel));
 }
 
 void ULab::Home(AXIS axis, DEVICE_CODE id)
@@ -419,368 +419,6 @@ void MSleep(uint msec)
 }
 
 
-// ******************************* 低精度位移台运动控制 *********************************
-
-// ********************************* 定向移动运动控制 **********************************
-
-
-void ULab::MoveStage(DEVICE_CODE stage_type,
-                     QPoint target_start_pos,
-                     AXIS direction,
-                     bool positive,
-                     int total_steps,
-                     int speed_x,
-                     int speed_y,
-                     int dwell_ms) // dwell_ms 是X/Y轴的停留时间
-{
-    m_emergencyFlag.storeRelaxed(0);
-
-    if(!STAGE_CONFIG.contains(stage_type))
-    {
-        emit SendMessage("错误：未知设备类型!");
-        return;
-    }
-    auto params = STAGE_CONFIG[stage_type];
-
-    emit SendMessage("开始Z轴归位/回到初始安全位置...");
-    Home(AXIS_Z, params.code);
-
-    // 检查是否需要移动到起始位置
-    QPoint current_pos_xy = m_currentPos.value(stage_type, QPoint(-1,-1)); // 仅用于X, Y
-    if(current_pos_xy != target_start_pos)
-    {
-        if(m_emergencyFlag.loadRelaxed())
-        {
-            emit SendMessage("急停激活，校准取消");
-            return;
-        }
-
-        emit SendMessage(QString("当前位置(%1,%2)与目标起始位置(%3,%4)不一致，开始校准...")
-                             .arg(current_pos_xy.x()).arg(current_pos_xy.y())
-                             .arg(target_start_pos.x()).arg(target_start_pos.y()));
-
-        // X轴校准
-        if(target_start_pos.x() != current_pos_xy.x())
-        {
-            Goto(AXIS_X, static_cast<uint16_t>(target_start_pos.x() * params.x_step_um), params.code);
-            MSleep(1500); // 等待X轴移动
-        }
-
-        // Y轴校准
-        if(target_start_pos.y() != current_pos_xy.y())
-        {
-            Goto(AXIS_Y, static_cast<uint16_t>(target_start_pos.y() * params.y_step_um), params.code);
-            MSleep(1500); // 等待Y轴移动
-        }
-        m_currentPos[stage_type] = target_start_pos; // 更新X,Y当前位置
-    }
-
-    // uint16_t actual_x_speed = (speed_x > 0) ? static_cast<uint16_t>(speed_x) : params.x_speed;
-    // uint16_t actual_y_speed = (speed_y > 0) ? static_cast<uint16_t>(speed_y) : params.y_speed;
-    uint16_t actual_z_speed = params.z_speed;
-
-    // SetSpeedStage(AXIS_X, actual_x_speed, params.code);
-    // SetSpeedStage(AXIS_Y, actual_y_speed, params.code);
-    SetSpeedStage(AXIS_Z, actual_z_speed, params.code);
-    MSleep(100); // 等待速度设置指令发送
-
-    // 假设Z轴的初始/原点位置为0um。如果不是，需要调整。
-    const uint16_t z_original_pos_um = 0;
-    const uint16_t z_travel_um = Z_AXIS_TRAVEL_MM * 1000;
-    const uint16_t z_down_pos_um = z_original_pos_um + z_travel_um;
-
-
-    // 计算Z轴移动所需时间 (ms)
-    // Z轴速度单位是 0.12 mm/s. s = actual_z_speed.
-    // time_seconds = Z_AXIS_TRAVEL_MM / (actual_z_speed * 0.12)
-    // time_ms = time_seconds * 1000
-
-    int z_move_duration_ms = 0;
-    if (actual_z_speed > 0 && params.code != PUMP_CODE)  // PUMP_CODE不适用位移台速度计算
-    {
-        double speed_mm_per_s = actual_z_speed * 0.12;
-        if (speed_mm_per_s > 0) {
-            z_move_duration_ms = static_cast<int>(qCeil((static_cast<double>(Z_AXIS_TRAVEL_MM) / speed_mm_per_s) * 1000.0));
-        } else {
-            z_move_duration_ms = 3000; // 默认延时
-        }
-    }
-    else
-    {
-        z_move_duration_ms = 3000; // 默认延时
-    }
-    if (z_move_duration_ms < 500) z_move_duration_ms = 500; // 最小延时
-
-    // 分步移动
-    for(int step = 0; step < total_steps; ++step)
-    {
-        if(m_emergencyFlag.loadAcquire())
-        {
-            emit SendMessage("移动被急停中断");
-            return;
-        }
-        QCoreApplication::processEvents();
-
-        QPoint new_xy_pos = m_currentPos[stage_type];
-        switch(direction)
-        {
-        case AXIS_X:
-            new_xy_pos.setX(positive ? new_xy_pos.x() + 1 : new_xy_pos.x() - 1);
-            break;
-        case AXIS_Y:
-            new_xy_pos.setY(positive ? new_xy_pos.y() + 1 : new_xy_pos.y() - 1);
-            break;
-        default:
-            emit SendMessage("无效运动轴向!");
-            return;
-        }
-
-        if(new_xy_pos.x() < 0 || new_xy_pos.x() >= params.cols ||
-            new_xy_pos.y() < 0 || new_xy_pos.y() >= params.rows)
-        {
-            emit SendMessage("移动超出孔板范围!");
-            return;
-        }
-
-        // 执行X或Y轴单步移动
-        uint16_t target_xy_pos_um = (direction == AXIS_X ? static_cast<uint16_t>(new_xy_pos.x() * params.x_step_um)
-                                                         : static_cast<uint16_t>(new_xy_pos.y() * params.y_step_um));
-        Goto(direction, target_xy_pos_um, params.code);
-        MSleep(800); // 等待X或Y轴移动完成 (这个延时需要根据实际情况调整)
-
-        m_currentPos[stage_type] = new_xy_pos; // 更新X,Y当前位置
-        emit SendMessage(QString("[%1] X/Y轴已到达步骤%2/%3 - 位置(%4,%5)")
-                             .arg(stage_type == LOW_STAGE_CODE ? "低精度" : "高精度")
-                             .arg(step+1).arg(total_steps)
-                             .arg(new_xy_pos.x()).arg(new_xy_pos.y()));
-
-        // --- Z轴操作开始 ---
-        if(m_emergencyFlag.loadAcquire())
-        { emit SendMessage("Z轴操作前急停"); return; }
-        emit SendMessage(QString("Z轴开始向下移动 %1 mm").arg(Z_AXIS_TRAVEL_MM));
-        Goto(AXIS_Z, z_down_pos_um, params.code);
-        MSleep(z_move_duration_ms + 200); // 等待Z轴向下移动完成，额外200ms缓冲
-
-        if(m_emergencyFlag.loadAcquire())
-        { emit SendMessage("Z轴向下移动后急停"); return; }
-        emit SendMessage(QString("Z轴在底部停留 %1 ms").arg(Z_AXIS_DWELL_MS));
-        MSleep(Z_AXIS_DWELL_MS);
-
-        if(m_emergencyFlag.loadAcquire())
-        { emit SendMessage("Z轴停留后急停"); return; }
-        emit SendMessage("Z轴开始向上移动到原位");
-        Goto(AXIS_Z, z_original_pos_um, params.code);
-        MSleep(z_move_duration_ms + 200); // 等待Z轴向上移动完成，额外200ms缓冲
-        // --- Z轴操作结束 ---
-
-        // X/Y轴的停留时间
-        if (dwell_ms > 0) {
-            if(m_emergencyFlag.loadAcquire()) { emit SendMessage("X/Y停留前急停"); return; }
-            emit SendMessage(QString("X/Y轴在位置(%1,%2)停留 %3 ms").arg(new_xy_pos.x()).arg(new_xy_pos.y()).arg(dwell_ms));
-                // 使用循环和processEvents允许在长延时期间响应急停
-            for(int i = 0; i < dwell_ms / 100; ++i) {
-                if(m_emergencyFlag.loadAcquire()) {
-                    emit SendMessage("X/Y停留期间触发急停");
-                    return;
-                }
-                MSleep(100);
-                QCoreApplication::processEvents();
-            }
-            if (dwell_ms % 100 > 0) { // 处理余下的延时
-                MSleep(dwell_ms % 100);
-            }
-        }
-    }
-    emit SendMessage(QString("[%1] 定向移动完成").arg(stage_type == LOW_STAGE_CODE ? "低精度" : "高精度"));
-}
-
-// **********************************************************************************
-
-// ********************************* 全板遍历运动控制 **********************************
-
-
-void ULab::MoveStage(DEVICE_CODE stage_type, int speed_x, int speed_y, int dwell_ms) // dwell_ms,停留时间，即加液时间
-{
-    m_emergencyFlag.storeRelaxed(0); // 重置急停标志
-
-    if(!STAGE_CONFIG.contains(stage_type)) {
-        emit SendMessage("错误：未知设备类型!");
-        return;
-    }
-    auto params = STAGE_CONFIG[stage_type];
-
-    // uint16_t actual_x_speed = (speed_x > 0) ? static_cast<uint16_t>(speed_x) : params.x_speed;
-    // uint16_t actual_y_speed = (speed_y > 0) ? static_cast<uint16_t>(speed_y) : params.y_speed;
-    // uint16_t actual_z_speed = params.z_speed;
-
-    // SetSpeedStage(AXIS_X, actual_x_speed, params.code);
-    // SetSpeedStage(AXIS_Y, actual_y_speed, params.code);
-    // SetSpeedStage(AXIS_Z, actual_z_speed, params.code);
-    // MSleep(100); // 等待速度设置指令发送
-
-    // 归位X和Y轴到物理原点 (0,0)
-    // emit SendMessage("开始X轴归位...");
-    // Home(AXIS_X, params.code);
-    // MSleep(5000);
-    // emit SendMessage("开始Y轴归位...");
-    // Home(AXIS_Y, params.code);
-    // MSleep(5000);
-    // emit SendMessage("开始Z轴归位...");
-    // Home(AXIS_Z, params.code);
-    // MSleep(5000);
-
-    m_currentPos[stage_type] = QPoint(-1,-1); // 归位后，逻辑孔位为-1,-1 (在A1之前)
-
-    // const uint16_t z_original_pos_um = 0; // 假设Z轴归位后为0um
-    // const uint16_t z_travel_um = Z_AXIS_TRAVEL_MM * 1000;
-    // const uint16_t z_down_pos_um = z_original_pos_um + z_travel_um;
-
-    // int z_move_duration_ms = 0;
-    // if (actual_z_speed > 0 && params.code != PUMP_CODE) {
-    //     double speed_mm_per_s = actual_z_speed * 0.12;
-    //     if (speed_mm_per_s > 0) {
-    //         z_move_duration_ms = static_cast<int>(qCeil((static_cast<double>(Z_AXIS_TRAVEL_MM) / speed_mm_per_s) * 1000.0));
-    //     } else {
-    //         z_move_duration_ms = 3000;
-    //     }
-    // } else {
-    //     z_move_duration_ms = 3000;
-    // }
-    // if (z_move_duration_ms < 500) z_move_duration_ms = 500;
-
-    emit SendMessage("--- 开始初始定位：移动到A1点 ---");
-
-    const int max_retries = 3; // 定义最大重试次数
-    int retry_count = 0;       // 初始化重试计数器
-    bool x_ok = false;         // 初始化X轴成功标志
-    bool y_ok = false;         // 初始化Y轴成功标志
-    int last_x = -1, last_y = -1; // 定义变量以接收当前坐标
-
-    uint16_t a1_target_x = params.initial_offset_x_um;
-    uint16_t a1_target_y = params.initial_offset_y_um;
-
-    // 进入重试循环，直到成功或达到最大次数
-    while (retry_count < max_retries) {
-        if (retry_count > 0) {
-            emit SendMessage(QString("!!! 定位失败，正在进行第 %1/%2 次重试...").arg(retry_count).arg(max_retries -1));
-            emit SendMessage(QString("    目标 -> X: %1, Y: %2").arg(a1_target_x).arg(a1_target_y));
-            emit SendMessage(QString("    当前 -> X: %1, Y: %2").arg(last_x).arg(last_y));
-        }
-
-        // 每次重试都重新发送移动指令
-        Goto(AXIS_X, a1_target_x, params.code);
-        MSleep(5000);
-        Goto(AXIS_Y, a1_target_y, params.code);
-        MSleep(5000);
-
-        // 调用函数进行位置确认
-        x_ok = waitForPosition(stage_type, AXIS_X, a1_target_x, last_x);
-        y_ok = waitForPosition(stage_type, AXIS_Y, a1_target_y, last_y);
-
-        // 如果两轴都已到位，则成功，跳出重试循环
-        if (x_ok && y_ok) {
-            break;
-        }
-
-        // 如果失败，增加计数器，准备下一次重试
-        retry_count++;
-        MSleep(500); // 重试前短暂延时
-    }
-
-    // 在循环结束后，最终检查是否成功。如果不成功，则说明所有重试都已失败。
-    if (!x_ok || !y_ok) {
-        emit SendMessage("!!! 达到最大重试次数，定位A1彻底失败，流程中止 !!!");
-        emit SendMessage(QString("    最后状态 -> 目标X: %1, 当前X: %2 | 目标Y: %3, 当前Y: %4")
-                             .arg(a1_target_x).arg(last_x).arg(a1_target_y).arg(last_y));
-        return;
-    }
-
-    // --- A1点的特殊处理逻辑 ---
-    emit SendMessage("已成功到达A1点，1秒后开始加液遍历运动");
-    MSleep(1000);
-
-    // A1点的加液操作 (Z轴)
-    // emit SendMessage(QString("Z轴下降加液..."));
-    // Goto(AXIS_Z, z_down_pos_um, params.code);
-    // MSleep(z_move_duration_ms + 200);
-    // emit SendMessage(QString("Z轴在底部停留 %1 ms").arg(Z_AXIS_DWELL_MS));
-    // MSleep(Z_AXIS_DWELL_MS);
-    // emit SendMessage(QString("Z轴上升..."));
-    // Goto(AXIS_Z, z_original_pos_um, params.code);
-    // MSleep(z_move_duration_ms + 200);
-
-    // A1点的停留
-    if (dwell_ms > 0) {
-        emit SendMessage(QString("在孔位 A1 等待 %2 ms").arg(dwell_ms));
-        MSleep(dwell_ms);
-    }
-
-
-    // 蛇形遍历算法
-    // 外层循环控制X轴，对应孔板的“行” (A, B, C...)
-    for(int row = 0; row < params.rows; ++row) {
-        if(m_emergencyFlag.loadAcquire()) { emit SendMessage("遍历被急停中断"); return; }
-        QCoreApplication::processEvents();
-
-        // 1. 每换一行，先移动X轴到目标行的位置
-        uint16_t target_x_um = params.initial_offset_x_um + (row * params.x_step_um);
-        emit SendMessage(QString("移动到第 %1 行 (X坐标: %2 um)").arg(QChar('A' + row)).arg(target_x_um));
-        Goto(AXIS_X, target_x_um, params.code);
-        if (!waitForPosition(stage_type, AXIS_X, target_x_um, last_x)) return; // 每次换行都确认X轴位置
-
-        // 2. 根据行的奇偶，决定内层Y轴循环的方向
-        bool left_to_right = (row % 2 == 0); // 偶数行 (A, C, E...) 的列号从小到大
-
-        // 内层循环控制Y轴，对应孔板的“列” (1, 2, 3...)
-        int col_start = left_to_right ? 0 : params.cols - 1;
-        int col_end = left_to_right ? params.cols : -1;
-        int col_step = left_to_right ? 1 : -1;
-
-        // 对第一行 (A行) 的特殊处理，使其从A2 (col=1) 开始
-        if (row == 0) {
-            col_start = 1;
-        }
-
-        for(int col = col_start; col != col_end; col += col_step) {
-            if(m_emergencyFlag.loadAcquire()) { emit SendMessage("遍历被急停中断"); return; }
-            // QCoreApplication::processEvents();
-
-            // 2.1. Y轴定位到当前列
-            uint16_t target_y_um = params.initial_offset_y_um - (col * params.y_step_um);
-            Goto(AXIS_Y, target_y_um, params.code);
-            if (!waitForPosition(stage_type, AXIS_Y, target_y_um, last_y)) return; // 每次换列都确认Y轴位置
-
-            // 2.2. 发送消息和处理特殊延时
-            QString wellName = getWellName(row, col);
-            emit SendMessage(QString("已运动到%1点，开始加液").arg(wellName));
-
-            // 2.3. Z轴操作 (加液)
-            // emit SendMessage(QString("Z轴下降加液..."));
-            // Goto(AXIS_Z, z_down_pos_um, params.code);
-            // MSleep(z_move_duration_ms + 200);
-
-            // emit SendMessage(QString("Z轴在底部停留 %1 ms").arg(Z_AXIS_DWELL_MS));
-            // MSleep(Z_AXIS_DWELL_MS);
-
-            // emit SendMessage(QString("Z轴上升..."));
-            // Goto(AXIS_Z, z_original_pos_um, params.code);
-            // MSleep(z_move_duration_ms + 200);
-
-            // 2.4. 停留
-            if (dwell_ms > 0) {
-                emit SendMessage(QString("在孔位 %1 等待 %2 ms").arg(wellName).arg(dwell_ms));
-                MSleep(dwell_ms);
-            }
-        }
-    }
-    emit SendMessage(QString("[%1] 全板遍历完成").arg(stage_type == LOW_STAGE_CODE ? "低精度" : "高精度"));
-}
-
-
-
-// **************************************************************************
-
-
 void ULab::SendData(const QByteArray &data)
 {
     if (pPort && pPort->isOpen()) {
@@ -822,56 +460,7 @@ void ULab::EmergencyStop() {
     emit SendMessage("! 紧急停止已触发 !");
 }
 
-
-bool ULab::waitForPosition(DEVICE_CODE stage_type, AXIS axis, uint16_t target_pos, int& last_pos, int timeout_ms)
-{
-    emit SendMessage(QString("正在确认 %1... 目标: %2").arg(GetAxisName(axis)).arg(target_pos));
-
-    QEventLoop loop;
-    QTimer timer;
-    timer.setSingleShot(true);
-    // 连接超时信号，如果超时，循环将以状态码1退出
-    connect(&timer, &QTimer::timeout, &loop, [&](){ loop.exit(1); });
-
-    bool position_reached = false;
-    last_pos = -1; // 初始化为-1，表示尚未收到任何位置信息
-    // 连接位置更新信号
-    auto conn = connect(this, &ULab::UpdatePos, this,
-                        [&](DEVICE_CODE id, AXIS a, int pos) {
-                            // 检查是否是我们关心的设备和轴
-                            if (id == stage_type && a == axis) {
-                                last_pos = pos;    // 无论是否到达，都更新最后的位置
-                                // 检查坐标是否在目标1000微米的容差范围内
-                                if (qAbs(pos - target_pos) < 1000) {
-                                    position_reached = true;
-                                    loop.exit(0); // 成功，以返回码 0 退出
-                                }
-                            }
-                        });
-
-    // 创建一个定时器，周期性地发送查询位置的指令
-    QTimer pollTimer;
-    connect(&pollTimer, &QTimer::timeout, this, [this, axis, stage_type](){
-        GetPos(axis, stage_type);
-    });
-
-    pollTimer.start(250); // 每250毫秒查询一次位置
-    timer.start(timeout_ms); // 启动总超时定时器
-
-    int exit_code = loop.exec(); // 开始事件循环，程序会在这里“等待”
-
-    pollTimer.stop();
-    disconnect(conn); // 清理信号连接
-
-    if (exit_code != 0) { // exit_code不为0，意味着超时失败
-        // 失败时，last_pos中保存的是超时前最后一次收到的坐标
-        emit SendMessage(QString("错误: %1 未能在 %2ms 内到达目标! (最后位置: %3)")
-                             .arg(GetAxisName(axis)).arg(timeout_ms).arg(last_pos));
-    }
-
-    return position_reached; // position_reached只在成功时为true
-}
-
+// ******************************************************************************
 
 // ******************************* 多通道换液流程 *********************************
 
@@ -883,13 +472,13 @@ void ULab::Pump_Peristaltic(uint8_t id, bool direction, double flow_speed, doubl
 
 
     if (flow_speed <= 0) {
-        emit SendMessage("  > 错误：流速为0，无法计算时长。");
+        emit SendMessage("  > 错误：流速输入有误，无法计算时长。");
         return;
     }
     uint16_t hardware_speed = static_cast<uint16_t>(flow_speed * SPEED_UNIT_CONVERSION_FACTOR);
     uint duration_ms = static_cast<uint>((volume_ul / flow_speed) * 1000.0);
 
-    emit SendMessage(QString("  > 参数: 流速=%1uL/s, 体积=%2uL, 计算时长=%3ms")
+    emit SendMessage(QString("  > 参数: 流速=%1uL/s, 加液体积=%2uL, 计算所需时长=%3ms")
                          .arg(flow_speed).arg(volume_ul).arg(duration_ms));
 
     SetSpeed(hardware_speed, id);
@@ -908,19 +497,19 @@ void ULab::Pump_in(const Setconfig_Pump_in& config)
 
     emit SendMessage(QString("\n[执行动作]: %1").arg(config.action_name));
 
-    emit SendMessage(QString("  > 配置线路: [源] %1号切换阀-%2通道 --> [%3号泵] --> [目标] %4号切换阀-%5通道")
+    emit SendMessage(QString("  > 配置线路:  %1号切换阀-第%2通道 --> [%3号蠕动泵] --> %4号切换阀-第%5通道")
                          .arg(config.valve_id_in).arg(config.channel_in)
                          .arg(config.pump_id)
                          .arg(config.valve_id_out).arg(config.channel_out));
 
-    GotoHole(0x00, config.channel_in, config.valve_id_in);
+    GotoChannel(0x00, config.channel_in, config.valve_id_in);
     MSleep(VALVE_SWITCH_DELAY_MS);
-    GotoHole(0x00, config.channel_out, config.valve_id_out);
+    GotoChannel(0x00, config.channel_out, config.valve_id_out);
     MSleep(VALVE_SWITCH_DELAY_MS);
 
     Pump_Peristaltic(config.pump_id, config.isForward, config.speed, config.volume_ul+DEAD_VOLUME);
 
-    emit SendMessage(QString("  > 动作 '%1' 完成.").arg(config.action_name));
+    emit SendMessage(QString("  > '%1' 完成.").arg(config.action_name));
 }
 
 
