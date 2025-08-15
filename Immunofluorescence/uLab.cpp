@@ -1,6 +1,7 @@
 #include "uLab.h"
 #include <QCoreApplication>
 #include <QtMath>
+#include <QDebug>
 
 QString getWellName(int row, int col)
 {
@@ -20,6 +21,7 @@ ULab::ULab(QObject *parent) : QObject(parent)
     pParseTimer = new QTimer(this);
     pReadTimer = new QTimer(this);
     pGetFlowTimer = new QTimer(this);
+    m_pumpInterval = 1000; // 默认间隔1秒
     connect(pPortTimer, &QTimer::timeout, this, &ULab::RefreshPort);
     connect(pParseTimer, &QTimer::timeout, this, &ULab::ParsePort);
     //    pCRC = new CRC();
@@ -27,6 +29,9 @@ ULab::ULab(QObject *parent) : QObject(parent)
 
 ULab::~ULab()
 {
+    // 程序退出时停止所有设备
+    StopAllDevices();
+    
     ClosePort();
     delete pPortTimer;
     delete pParseTimer;
@@ -400,22 +405,40 @@ QByteArray CRCMDBS_GetValue(QByteArray msg)
     //    return (m_CRC_High<<8|m_CRC_Low);
 }
 
-QString GetAxisName(AXIS axis)
-{
-    switch(axis)
-    {
-    case AXIS_X: return "AXIS X";
-    case AXIS_Y: return "AXIS Y";
-    case AXIS_Z: return "AXIS Z";
-    default: return "";
-    }
-}
 
+// 非阻塞的延时函数
 void MSleep(uint msec)
 {
     QEventLoop loop;
     QTimer::singleShot(msec, &loop, SLOT(quit()));
     loop.exec();
+}
+
+// 可中断的延时函数
+void MSleepInterruptible(uint msec)
+{
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    
+    // 每100ms检查一次是否应该停止
+    const uint checkInterval = 100;
+    uint elapsed = 0;
+    
+    while (elapsed < msec) {
+        int sleepTime = qMin(checkInterval, static_cast<uint>(msec - elapsed));
+        timer.start(sleepTime);
+        loop.exec();
+        elapsed += sleepTime;
+        
+        // 检查全局停止标志
+        if (QCoreApplication::instance() && 
+            QCoreApplication::instance()->property("shouldStop").toBool()) {
+            qDebug() << "检测到停止信号，中断延时操作";
+            break;
+        }
+    }
 }
 
 
@@ -427,89 +450,303 @@ void ULab::SendData(const QByteArray &data)
     }
 }
 
-void ULab::EmergencyStop() {
-    m_emergencyFlag.storeRelaxed(1); // 设置急停标志
-
-    // 发送急停指令到所有设备
-    QStringList stopCommands;
-    stopCommands << "AXIS_X STOP_EMERGENCY"
-                 << "AXIS_Y STOP_EMERGENCY"
-                 << "SAVE_EMERGENCY_STATE";
-
-    // 通过串口发送急停指令
-    foreach(const auto& cmd, stopCommands) {
-        SendData(cmd.toLatin1());
-        MSleep(50);
-    }
-
-    // 禁用所有轴使能
-    SetAxisEnable(AXIS_X, false, LOW_STAGE_CODE);
-    SetAxisEnable(AXIS_Y, false, LOW_STAGE_CODE);
-    SetAxisEnable(AXIS_X, false, HIGH_STAGE_CODE);
-    SetAxisEnable(AXIS_Y, false, HIGH_STAGE_CODE);
-
-    wrtCmdList.clear();
-
-    // 立即刷新串口
-    if(pPort->isOpen())
-    {
-        pPort->flush();
-    }
-
-    emit EmergencyStopTriggered();
-    emit SendMessage("! 紧急停止已触发 !");
-}
-
 // ******************************************************************************
 
 // ******************************* 多通道换液流程 *********************************
 
-
-void ULab::Pump_Peristaltic(uint8_t id, bool direction, double flow_speed, double volume_ul)
+void ULab::SetReagentConfig(const QMap<QString, ReagentConfig>& config)
 {
-    // 速度单位转换因子：每 1 µL/s 的流速对应多少设备速度单位 (例如 2.0 RPMs per µL/s)
-    const double SPEED_UNIT_CONVERSION_FACTOR = 2.0;
+    m_reagentConfigs = config;
+    emit SendMessage(QString("试剂配置已更新，共配置 %1 种试剂").arg(config.size()));
+}
+
+void ULab::SetSampleConfig(const QMap<QString, SampleConfig>& config)
+{
+    m_sampleConfigs = config;
+    emit SendMessage(QString("样品配置已更新，共配置 %1 个样品").arg(config.size()));
+}
+
+void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed speed, const QString& sample_name, uint delay_sec)
+{
+    // 检查试剂是否已配置
+    if (!m_reagentConfigs.contains(reagent_name)) {
+        emit SendMessage(QString("错误：试剂: '%1' 未在配置中找到").arg(reagent_name));
+        return;
+    }
+    
+    // 检查样品是否已配置
+    if (!m_sampleConfigs.contains(sample_name)) {
+        emit SendMessage(QString("错误：'%1' 未在配置中找到").arg(sample_name));
+        return;
+    }
+
+    // 获取试剂和样品配置
+    ReagentConfig reagent = m_reagentConfigs[reagent_name];
+    SampleConfig sample = m_sampleConfigs[sample_name];
+    
+    // 根据速度枚举转换为实际流速值 (uL/s)
+    double flow_speed = 0.0;
+    switch (speed) {
+        case SLOW:   flow_speed = 20.0;  break;  // 慢速：20 uL/s
+        case MEDIUM: flow_speed = 50.0;  break;  // 中速：50 uL/s
+        case FAST:   flow_speed = 100.0; break;  // 快速：100 uL/s
+    }
+
+        emit SendMessage(QString("\n[加液操作]: %1uL %2 --> %3 (%4速)")
+                             .arg(QString::number(volume_ul),
+                                  reagent_name,
+                                  sample_name,
+                                  speed == SLOW ? "慢" : (speed == MEDIUM ? "中" : "快")));
 
 
+    // 切换第一个切换阀到试剂通道
+    GotoChannel(0x00, reagent.valve_channel, REAGENT_VALVE_ID);
+    MSleep(VALVE_SWITCH_DELAY_MS);
+    
+    // 切换第二个切换阀到样品通道
+    GotoChannel(0x00, sample.valve_channel, SAMPLE_VALVE_ID);
+    MSleep(VALVE_SWITCH_DELAY_MS);
+
+    // 执行加液操作
+    
     if (flow_speed <= 0) {
         emit SendMessage("  > 错误：流速输入有误，无法计算时长。");
         return;
     }
-    uint16_t hardware_speed = static_cast<uint16_t>(flow_speed * SPEED_UNIT_CONVERSION_FACTOR);
-    uint duration_ms = static_cast<uint>((volume_ul / flow_speed) * 1000.0);
+    
+    uint duration_ms = static_cast<uint>((volume_ul + DEAD_VOLUME) / flow_speed * 1000.0);
 
-    emit SendMessage(QString("  > 参数: 流速=%1uL/s, 加液体积=%2uL, 计算所需时长=%3ms")
-                         .arg(flow_speed).arg(volume_ul).arg(duration_ms));
+    // 启动蠕动泵加液
+    SetSpeed(flow_speed, PUMP_IN_ID);
+    Rotate(true, true, PUMP_IN_ID);
+    emit SendMessage(QString("  > 开始加液"));
 
-    SetSpeed(hardware_speed, id);
-    Rotate(true, direction, id);
     MSleep(duration_ms);
-    Rotate(false, direction, id);
+    Rotate(false, true, PUMP_IN_ID);
+    emit SendMessage(QString("  > 加液完成"));
+    
+    // 用户设置的间隔时间(转换秒为毫秒)
+    uint interval_ms = delay_sec * 1000;
+    if (interval_ms > 0) {
+        emit SendMessage(QString("  > 等待 %1 秒...").arg(delay_sec));
+        MSleep(interval_ms);
+    }
+
+    // 启动蠕动泵抽液
+    SetSpeed(flow_speed, PUMP_OUT_ID);
+    Rotate(true, false, PUMP_OUT_ID);
+    emit SendMessage(QString("  > 开始抽液"));
+
+    MSleep(duration_ms);
+    Rotate(false, false, PUMP_OUT_ID);
+    emit SendMessage(QString("  > 抽液完成"));
+
+    emit SendMessage(QString("  > '%1' 操作完成.").arg(reagent_name));
 }
 
-void ULab::Pump_in(const Setconfig_Pump_in& config)
+void ULab::WashPipeline(const QString& reagent_name, const QString& sample_name)
 {
-    // 阀门切换延时
-    const int VALVE_SWITCH_DELAY_MS = 1000;
+    // 检查试剂是否已配置
+    if (!m_reagentConfigs.contains(reagent_name)) {
+        emit SendMessage(QString("错误：试剂: '%1' 未在配置中找到").arg(reagent_name));
+        return;
+    }
 
-    // 从开始到最终加液端口的液体“死体积”大小
-    const int DEAD_VOLUME = 500;
+    // 检查样品是否已配置
+    if (!m_sampleConfigs.contains(sample_name)) {
+        emit SendMessage(QString("错误：'%1' 未在配置中找到").arg(sample_name));
+        return;
+    }
 
-    emit SendMessage(QString("\n[执行动作]: %1").arg(config.action_name));
+    // 获取试剂和样品配置
+    ReagentConfig reagent = m_reagentConfigs[reagent_name];
+    SampleConfig sample = m_sampleConfigs[sample_name];
 
-    emit SendMessage(QString("  > 配置线路:  %1号切换阀-第%2通道 --> [%3号蠕动泵] --> %4号切换阀-第%5通道")
-                         .arg(config.valve_id_in).arg(config.channel_in)
-                         .arg(config.pump_id)
-                         .arg(config.valve_id_out).arg(config.channel_out));
+    emit SendMessage(QString("\n[冲洗管路]: 使用 %1 冲洗到 %2")
+                         .arg(reagent_name, sample_name));
 
-    GotoChannel(0x00, config.channel_in, config.valve_id_in);
+
+    // 切换第一个切换阀到试剂通道
+    GotoChannel(0x00, reagent.valve_channel, REAGENT_VALVE_ID);
     MSleep(VALVE_SWITCH_DELAY_MS);
-    GotoChannel(0x00, config.channel_out, config.valve_id_out);
+    
+    // 切换第二个切换阀到废液缸通道
+    GotoChannel(0x00, sample.valve_channel, SAMPLE_VALVE_ID);
     MSleep(VALVE_SWITCH_DELAY_MS);
 
-    Pump_Peristaltic(config.pump_id, config.isForward, config.speed, config.volume_ul+DEAD_VOLUME);
+    // 执行冲洗操作 - 使用固定的速度和时间
+    emit SendMessage(QString("  > 开始冲洗管路"));
 
-    emit SendMessage(QString("  > '%1' 完成.").arg(config.action_name));
+    // 启动蠕动泵进行冲洗
+    SetSpeed(WASH_SPEED, PUMP_IN_ID);
+    Rotate(true, true, PUMP_IN_ID);
+
+    MSleepInterruptible(WASH_DURATION_SEC * 1000);  // 使用可中断的延时
+
+    Rotate(false, true, PUMP_IN_ID);
+    emit SendMessage(QString("  > 管路冲洗完成"));
+}
+
+void ULab::InitialWashPipelines(uint reagent_switch_interval)
+{
+    emit SendMessage(QString("\n\n*** 开始初始化管路冲洗 ***"));
+    emit SendMessage(QString("注意：初始时所有通道都连接PBS，冲洗完成后请更换为实际试剂"));
+    
+    // 获取试剂通道和样品通道列表，并按通道号排序
+    QList<uint8_t> reagentChannels;
+    QList<uint8_t> sampleChannels;
+    
+    for (auto it = m_reagentConfigs.begin(); it != m_reagentConfigs.end(); ++it) {
+        reagentChannels.append(it.value().valve_channel);
+    }
+    
+    for (auto it = m_sampleConfigs.begin(); it != m_sampleConfigs.end(); ++it) {
+        sampleChannels.append(it.value().valve_channel);
+    }
+    
+    // 按通道号排序
+    std::sort(reagentChannels.begin(), reagentChannels.end());
+    std::sort(sampleChannels.begin(), sampleChannels.end());
+    
+    // 构建通道号字符串用于显示
+    QStringList reagentChStrList, sampleChStrList;
+    for (uint8_t ch : reagentChannels) {
+        reagentChStrList << QString::number(ch);
+    }
+    for (uint8_t ch : sampleChannels) {
+        sampleChStrList << QString::number(ch);
+    }
+    
+    emit SendMessage(QString("试剂通道: %1个 [%2]").arg(reagentChannels.size()).arg(reagentChStrList.join(",")));
+    emit SendMessage(QString("样品通道: %1个 [%2]").arg(sampleChannels.size()).arg(sampleChStrList.join(",")));
+    
+    // 找出废液缸通道（通道号最小的样品通道）
+    uint8_t wasteChannel = sampleChannels.isEmpty() ? 1 : sampleChannels.first();
+    emit SendMessage(QString("废液缸所在通道: %1 (默认为通道号最小的样品通道)").arg(wasteChannel));
+    
+    int reagentCount = reagentChannels.size();
+    int sampleCount = sampleChannels.size();
+    
+    emit SendMessage(QString("\n开始按策略进行管路冲洗:"));
+    
+    if (reagentCount < sampleCount) {
+        // 情况1: 试剂数量 < 样品数量
+        emit SendMessage(QString("=== 策略1: 试剂数量(%1) < 样品数量(%2) ===").arg(reagentCount).arg(sampleCount));
+        
+        // 首先按对应关系冲洗
+        for (int i = 0; i < reagentCount; i++) {
+            uint8_t reagentCh = reagentChannels[i];
+            uint8_t sampleCh = sampleChannels[i];
+            
+            emit SendMessage(QString("\n[冲洗] 试剂通道%1 -> 样品通道%2").arg(reagentCh).arg(sampleCh));
+            performWash(reagentCh, sampleCh, wasteChannel);
+        }
+        
+        // 剩余样品通道都用最小的试剂通道冲洗
+        uint8_t minReagentCh = reagentChannels.first();
+        for (int i = reagentCount; i < sampleCount; i++) {
+            uint8_t sampleCh = sampleChannels[i];
+            
+            emit SendMessage(QString("\n[冲洗] 试剂通道%1 -> 样品通道%2 (剩余样品通道)").arg(minReagentCh).arg(sampleCh));
+            performWash(minReagentCh, sampleCh, wasteChannel);
+        }
+        
+    } else if (reagentCount == sampleCount) {
+        // 情况2: 试剂数量 = 样品数量
+        emit SendMessage(QString("=== 策略2: 试剂数量(%1) = 样品数量(%2) ===").arg(reagentCount).arg(sampleCount));
+        
+        for (int i = 0; i < reagentCount; i++) {
+            uint8_t reagentCh = reagentChannels[i];
+            uint8_t sampleCh = sampleChannels[i];
+            
+            emit SendMessage(QString("\n[冲洗] 试剂通道%1 -> 样品通道%2").arg(reagentCh).arg(sampleCh));
+            performWash(reagentCh, sampleCh, wasteChannel);
+        }
+        
+    } else {
+        // 情况3: 试剂数量 > 样品数量
+        emit SendMessage(QString("=== 策略3: 试剂数量(%1) > 样品数量(%2) ===").arg(reagentCount).arg(sampleCount));
+        
+        // 首先按对应关系冲洗
+        for (int i = 0; i < sampleCount; i++) {
+            uint8_t reagentCh = reagentChannels[i];
+            uint8_t sampleCh = sampleChannels[i];
+            
+            emit SendMessage(QString("\n[冲洗] 试剂通道%1 -> 样品通道%2").arg(reagentCh).arg(sampleCh));
+            performWash(reagentCh, sampleCh, wasteChannel);
+        }
+        
+        // 剩余试剂通道都连接废液缸冲洗
+        for (int i = sampleCount; i < reagentCount; i++) {
+            uint8_t reagentCh = reagentChannels[i];
+            
+            emit SendMessage(QString("\n[冲洗] 试剂通道%1 -> 废液缸通道%2 (剩余试剂通道)").arg(reagentCh).arg(wasteChannel));
+            performWash(reagentCh, wasteChannel, wasteChannel);
+        }
+    }
+    
+    emit SendMessage(QString("\n*** 初始化管路冲洗完成 ***"));
+    emit SendMessage(QString("请现在更换各通道的实际试剂，程序将暂停60秒..."));
+    
+    // 暂停，让用户更换试剂
+    MSleepInterruptible(reagent_switch_interval * 1000);   // 使用可中断的延时
+    
+    emit SendMessage(QString("继续执行实验流程...\n"));
+}
+
+void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wasteChannel)
+{
+    // 切换到试剂通道
+    GotoChannel(0x00, reagentChannel, REAGENT_VALVE_ID);
+    MSleep(VALVE_SWITCH_DELAY_MS);
+    
+    // 切换到样品通道
+    GotoChannel(0x00, sampleChannel, SAMPLE_VALVE_ID);
+    MSleep(VALVE_SWITCH_DELAY_MS);
+    
+    // 启动加液泵进行冲洗
+    SetSpeed(WASH_SPEED, PUMP_IN_ID);
+    Rotate(true, true, PUMP_IN_ID);
+    MSleepInterruptible(WASH_DURATION_SEC * 1000);  // 使用可中断的延时
+    Rotate(false, true, PUMP_IN_ID);
+    
+    emit SendMessage(QString("  > 加液完成"));
+    
+    // 判断是否需要抽液：如果样品通道不是废液缸，则需要抽液
+    if (sampleChannel != wasteChannel) {
+        emit SendMessage(QString("  > 开始抽液（非废液缸）"));
+        
+        // 启动抽液泵
+        SetSpeed(WASH_SPEED, PUMP_OUT_ID);
+        Rotate(true, true, PUMP_OUT_ID);  // 抽液方向
+        MSleepInterruptible(WASH_DURATION_SEC * 1000);  // 使用可中断的延时
+        Rotate(false, true, PUMP_OUT_ID);
+        
+        emit SendMessage(QString("  > 抽液完成"));
+    } else {
+        emit SendMessage(QString("  > 跳过抽液（废液缸）"));
+    }
+    
+    emit SendMessage(QString("  > 冲洗完成"));
+    MSleep(500); // 短暂间隔
+}
+
+void ULab::StopAllDevices()
+{
+    emit SendMessage(QString("正在停止所有设备..."));
+    
+    // 设置停止标志
+    m_shouldStop.storeRelaxed(1);
+    QCoreApplication::instance()->setProperty("shouldStop", true);
+    
+    // 停止所有蠕动泵
+    Rotate(false, true, PUMP_IN_ID);   // 停止加液泵
+    Rotate(false, true, PUMP_OUT_ID);  // 停止抽液泵
+    
+    // 清空待发送命令队列
+    wrtCmdList.clear();
+    
+    emit SendMessage(QString("所有设备已停止"));
 }
 
 
