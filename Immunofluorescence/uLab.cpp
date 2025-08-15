@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include <QtMath>
 #include <QDebug>
+#include <QTextStream>
 
 QString getWellName(int row, int col)
 {
@@ -587,7 +588,7 @@ void ULab::WashPipeline(const QString& reagent_name, const QString& sample_name)
     emit SendMessage(QString("  > 管路冲洗完成"));
 }
 
-void ULab::InitialWashPipelines(uint reagent_switch_interval)
+void ULab::InitialWashPipelines()
 {
     emit SendMessage(QString("\n\n*** 开始初始化管路冲洗 ***"));
     emit SendMessage(QString("注意：初始时所有通道都连接PBS，冲洗完成后请更换为实际试剂"));
@@ -686,10 +687,10 @@ void ULab::InitialWashPipelines(uint reagent_switch_interval)
     }
     
     emit SendMessage(QString("\n*** 初始化管路冲洗完成 ***"));
-    emit SendMessage(QString("请现在更换各通道的实际试剂，程序将暂停60秒..."));
+    emit SendMessage(QString("请现在更换为各通道的实际试剂"));
     
-    // 暂停，让用户更换试剂
-    MSleepInterruptible(reagent_switch_interval * 1000);   // 使用可中断的延时
+    // 等待用户输入确认
+    WaitForUserInput("请完成试剂更换后，输入 'continue' 或 'c' 继续执行实验:");
     
     emit SendMessage(QString("继续执行实验流程...\n"));
 }
@@ -747,6 +748,35 @@ void ULab::StopAllDevices()
     wrtCmdList.clear();
     
     emit SendMessage(QString("所有设备已停止"));
+}
+
+void ULab::WaitForUserInput(const QString& message)
+{
+    emit SendMessage(message);
+    
+    QString input;
+    QTextStream stream(stdin);
+    
+    while (true) {
+        // 检查是否应该停止
+        if (m_shouldStop.loadRelaxed()) {
+            emit SendMessage(QString("检测到停止信号，取消等待用户输入"));
+            return;
+        }
+        
+        input = stream.readLine().trimmed().toLower();
+        
+        if (input == "continue" || input == "c") {
+            emit SendMessage(QString("收到继续指令，程序继续执行"));
+            break;
+        } else if (input == "quit" || input == "q" || input == "exit") {
+            emit SendMessage(QString("收到退出指令，程序退出"));
+            QCoreApplication::exit(0);
+            return;
+        } else {
+            emit SendMessage(QString("无效输入 '%1'，请输入 'continue'/'c' 继续，或 'quit'/'q' 退出:").arg(input));
+        }
+    }
 }
 
 

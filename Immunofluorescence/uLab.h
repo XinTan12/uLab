@@ -128,11 +128,13 @@ public:
     
     void WashPipeline(const QString& reagent_name, const QString& sample_name);
     
-    void InitialWashPipelines(uint reagent_switch_interval);
+    void InitialWashPipelines();
     
     void performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wasteChannel);
     
     void StopAllDevices();
+    
+    void WaitForUserInput(const QString& message);
     
     void SetReagentConfig(const QMap<QString, ReagentConfig>& config);
     void SetSampleConfig(const QMap<QString, SampleConfig>& config);

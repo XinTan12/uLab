@@ -93,9 +93,8 @@ int main(int argc, char *argv[])
 
      QTimer::singleShot(1000, &controller, [&]() {
 
-        // 在开始实验前，先进行初始化管路冲洗.
-        // 参数:用户更换试剂的间隔时间 (秒)
-        controller.InitialWashPipelines(60);
+        // 在开始实验前，先进行初始化管路冲洗
+        controller.InitialWashPipelines();
 
         // AddLiquid参数：试剂名称, 体积(uL), 速度(SLOW/MEDIUM/FAST), 样品名称, 加液抽液的间隔时间(秒)
         // WashPipeline参数：试剂名称, 样品名称
