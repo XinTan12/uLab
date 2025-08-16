@@ -406,6 +406,16 @@ QByteArray CRCMDBS_GetValue(QByteArray msg)
     //    return (m_CRC_High<<8|m_CRC_Low);
 }
 
+QString GetAxisName(AXIS axis)
+{
+    switch(axis)
+    {
+    case AXIS_X: return "AXIS X";
+    case AXIS_Y: return "AXIS Y";
+    case AXIS_Z: return "AXIS Z";
+    default: return "";
+    }
+}
 
 // 非阻塞的延时函数
 void MSleep(uint msec)
@@ -697,10 +707,12 @@ void ULab::InitialWashPipelines()
 
 void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wasteChannel)
 {
+    emit SendMessage(QString("  > 切换第一个阀到试剂通道%1").arg(reagentChannel));
     // 切换到试剂通道
     GotoChannel(0x00, reagentChannel, REAGENT_VALVE_ID);
     MSleep(VALVE_SWITCH_DELAY_MS);
     
+    emit SendMessage(QString("  > 切换第二个阀到样品通道%1").arg(sampleChannel));
     // 切换到样品通道
     GotoChannel(0x00, sampleChannel, SAMPLE_VALVE_ID);
     MSleep(VALVE_SWITCH_DELAY_MS);
@@ -753,29 +765,57 @@ void ULab::StopAllDevices()
 void ULab::WaitForUserInput(const QString& message)
 {
     emit SendMessage(message);
+    emit SendMessage("提示：请在Qt Creator的应用程序输出框下方输入命令");
     
-    QString input;
-    QTextStream stream(stdin);
+    m_waitingForInput = true;
+    m_userInput.clear();
     
-    while (true) {
-        // 检查是否应该停止
+    // 连接信号槽以处理用户输入
+    connect(this, &ULab::UserInputReceived, this, &ULab::onUserInputReceived, Qt::UniqueConnection);
+    
+    // 创建事件循环等待用户输入
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(false);
+    timer.setInterval(1000); // 每秒检查一次
+    
+    connect(&timer, &QTimer::timeout, [&]() {
+        if (!m_waitingForInput) {
+            loop.quit();
+        }
+        // 检查停止标志
         if (m_shouldStop.loadRelaxed()) {
             emit SendMessage(QString("检测到停止信号，取消等待用户输入"));
-            return;
+            m_waitingForInput = false;
+            loop.quit();
         }
-        
-        input = stream.readLine().trimmed().toLower();
-        
-        if (input == "continue" || input == "c") {
-            emit SendMessage(QString("收到继续指令，程序继续执行"));
-            break;
-        } else if (input == "quit" || input == "q" || input == "exit") {
-            emit SendMessage(QString("收到退出指令，程序退出"));
-            QCoreApplication::exit(0);
-            return;
-        } else {
-            emit SendMessage(QString("无效输入 '%1'，请输入 'continue'/'c' 继续，或 'quit'/'q' 退出:").arg(input));
-        }
+    });
+    
+    timer.start();
+    loop.exec();
+    timer.stop();
+    
+    // 断开连接
+    disconnect(this, &ULab::UserInputReceived, this, &ULab::onUserInputReceived);
+}
+
+void ULab::onUserInputReceived(QString input)
+{
+    if (!m_waitingForInput) {
+        return;
+    }
+    
+    QString cleanInput = input.trimmed().toLower();
+    
+    if (cleanInput == "continue" || cleanInput == "c") {
+        emit SendMessage(QString("收到继续指令，程序继续执行"));
+        m_waitingForInput = false;
+    } else if (cleanInput == "quit" || cleanInput == "q" || cleanInput == "exit") {
+        emit SendMessage(QString("收到退出指令，程序退出"));
+        m_waitingForInput = false;
+        QCoreApplication::exit(0);
+    } else {
+        emit SendMessage(QString("无效输入 '%1'，请输入 'continue'/'c' 继续，或 'quit'/'q' 退出:").arg(input));
     }
 }
 

@@ -2,6 +2,8 @@
 #include <QDebug>
 #include <QTimer>
 #include <csignal>
+#include <QSocketNotifier>
+#include <QTextStream>
 #include "uLab.h"
 
 // 全局指针，用于信号处理函数访问controller
@@ -42,6 +44,23 @@ int main(int argc, char *argv[])
     QObject::connect(&controller, &ULab::SendMessage, [](const QString &msg) {
         qDebug().noquote() << msg;           // 使用 noquote() 可以去掉字符串两边的引号，输出更美观
     });
+
+    // 添加一个简单的输入处理机制
+    QTimer inputTimer;
+    inputTimer.setInterval(100); // 每100ms检查一次输入
+    QTextStream inputStream(stdin);
+    
+    QObject::connect(&inputTimer, &QTimer::timeout, [&controller, &inputStream]() {
+        if (inputStream.device()->bytesAvailable() > 0) {
+            QString line = inputStream.readLine();
+            if (!line.isEmpty()) {
+                // 发射用户输入信号
+                emit controller.UserInputReceived(line);
+            }
+        }
+    });
+    
+    inputTimer.start();
 
     if(!controller.InitPort("/dev/tty.usbserial-140"))   // Windows: COMx    // mac: /dev/tty.usbserial-140
     {

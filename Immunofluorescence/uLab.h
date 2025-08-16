@@ -147,10 +147,12 @@ signals:
     void UpdateFlow(uint flow);                                                             //通知主界面更新流量信息
 
     void EmergencyStopTriggered();
+    void UserInputReceived(QString input);  // 新增：用户输入信号
 
 private slots:
     void RefreshPort();
     void ParsePort();
+    void onUserInputReceived(QString input);  // 新增：处理用户输入的槽函数
     void GetPosLowX()
     {
         GetPos(AXIS_X);
@@ -194,6 +196,9 @@ private:
     QMap<QString, SampleConfig> m_sampleConfigs; // 样品配置映射
     uint m_pumpInterval; // 加液和抽液之间的时间间隔(ms)
     QAtomicInt m_shouldStop{0}; // 停止标志，用于中断长时间操作
+    
+    bool m_waitingForInput{false}; // 是否正在等待用户输入
+    QString m_userInput; // 存储用户输入
 
 
 };
