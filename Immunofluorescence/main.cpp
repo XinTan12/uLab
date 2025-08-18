@@ -36,17 +36,17 @@ int main(int argc, char *argv[])
     g_controller = &controller;  // 设置全局指针
 
     // 注册信号处理函数
-    std::signal(SIGINT, signalHandler);   // Ctrl+C
-    std::signal(SIGTERM, signalHandler);  // 终止信号
-    std::signal(SIGABRT, signalHandler);  // 异常终止
+    std::signal(SIGINT, signalHandler);   // Ctrl+C，中断信号(2),在控制台按Ctrl+C时发送
+    std::signal(SIGTERM, signalHandler);  // 终止信号(15),Qt Creator点击"停止"按钮时发送的信号
+    std::signal(SIGABRT, signalHandler);  // 异常终止(6)，程序调用abort()函数或断言失败时触发
 #ifdef SIGBREAK
-    std::signal(SIGBREAK, signalHandler); // Windows Ctrl+Break
+    std::signal(SIGBREAK, signalHandler); // Windows Ctrl+Break(21)
 #endif
 #ifdef Q_OS_WIN
     // Windows特有信号
-    std::signal(SIGFPE, signalHandler);   // 浮点异常
-    std::signal(SIGILL, signalHandler);   // 非法指令
-    std::signal(SIGSEGV, signalHandler);  // 段错误
+    std::signal(SIGFPE, signalHandler);   // 浮点异常(8)，除零或其他数学错误时触发
+    std::signal(SIGILL, signalHandler);   // 非法指令(4)
+    std::signal(SIGSEGV, signalHandler);  // 段错误（内存访问错误）(11),程序访问无效内存地址时自动触发
 #endif
 
     // 将 controller 对象的 SendMessage 信号，连接到一个用于打印的 Lambda 槽函数
