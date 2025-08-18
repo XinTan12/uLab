@@ -17,8 +17,8 @@ void signalHandler(int signal)
     
     if (g_controller) {
             g_controller->StopAllDevices();
-            QCoreApplication::processEvents();  // 处理事件确保命令发送
-            QThread::msleep(100);  // 短暂等待
+            //QCoreApplication::processEvents();  // 处理事件确保命令发送
+            //QThread::msleep(100);  // 短暂等待
         g_controller->ClosePort();
     }
     
@@ -196,8 +196,8 @@ int main(int argc, char *argv[])
         
 
         controller.StopAllDevices();
-        QCoreApplication::processEvents();  // 处理事件确保命令发送
-        QThread::msleep(200);  // 等待命令执行
+        //QCoreApplication::processEvents();  // 处理事件确保命令发送
+        //QThread::msleep(500);  // 等待命令执行
         
         controller.ClosePort();
         qDebug() << "设备已安全停止";

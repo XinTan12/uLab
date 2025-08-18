@@ -3,6 +3,7 @@
 #include <QtMath>
 #include <QDebug>
 #include <QTextStream>
+#include <QThread>
 
 QString getWellName(int row, int col)
 {
@@ -754,8 +755,8 @@ void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wa
     // 等待命令发送完成
     WaitForCommandQueueEmpty();
     
-    // 等待第一个切换阀完成切换 - 增加等待时间
-    MSleep(VALVE_SWITCH_DELAY_MS + 500);  // 增加500ms额外等待
+    // 等待第一个切换阀完成切换
+    MSleep(VALVE_SWITCH_DELAY_MS);
     
     emit SendMessage(QString("  > 第一个阀切换完成，开始切换第二个阀到样品通道%1").arg(sampleChannel));
     // 切换到样品通道
@@ -764,8 +765,8 @@ void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wa
     // 等待命令发送完成
     WaitForCommandQueueEmpty();
     
-    // 等待第二个切换阀完成切换 - 显著增加等待时间
-    MSleep(VALVE_SWITCH_DELAY_MS + 1000);  // 增加1000ms额外等待，因为是串联连接
+    // 等待第二个切换阀完成切换
+    MSleep(VALVE_SWITCH_DELAY_MS );
     emit SendMessage(QString("  > 第二个阀切换完成"));
     
     // 启动加液泵进行冲洗
@@ -808,25 +809,25 @@ void ULab::StopAllDevices()
     Rotate(false, true, PUMP_OUT_ID);  // 停止抽液泵
 
     // 立即发送命令
-    if (pPort && pPort->isOpen()) {
-        while (!wrtCmdList.isEmpty()) {
-            QByteArray cmd = wrtCmdList.takeFirst();
-            pPort->write(cmd);
-            pPort->flush();
-            MSleep(10);  // 短暂间隔确保命令发送
-        }
-    }
+    // if (pPort && pPort->isOpen()) {
+    //     while (!wrtCmdList.isEmpty()) {
+    //         QByteArray cmd = wrtCmdList.takeFirst();
+    //         pPort->write(cmd);
+    //         pPort->flush();
+    //         MSleep(10);  // 短暂间隔确保命令发送
+    //     }
+    // }
 
-    MSleep(50);  // 短暂间隔后重复发送
+    MSleep(100);  // 这个间隔决定能否让蠕动泵停止转动！！！
     
     // 清空剩余的待发送命令队列
     wrtCmdList.clear();
     
     // 确保串口数据全部发送完成
-    if (pPort && pPort->isOpen()) {
-        pPort->flush();
-        pPort->waitForBytesWritten(1000);  // 等待最多1秒
-    }
+    // if (pPort && pPort->isOpen()) {
+    //     pPort->flush();
+    //     pPort->waitForBytesWritten(1000);  // 等待最多1秒
+    // }
     
     emit SendMessage(QString("所有设备已停止"));
 }
