@@ -16,12 +16,9 @@ void signalHandler(int signal)
     qDebug() << "接收到信号" << signal << "，正在安全停止所有设备...";
     
     if (g_controller) {
-        // 多次调用确保设备停止
-        for (int i = 0; i < 2; i++) {
             g_controller->StopAllDevices();
             QCoreApplication::processEvents();  // 处理事件确保命令发送
             QThread::msleep(100);  // 短暂等待
-        }
         g_controller->ClosePort();
     }
     
@@ -88,7 +85,7 @@ int main(int argc, char *argv[])
     qDebug() << "当程序提示等待用户输入时，输入 'c' 或 'continue' 继续执行";
     qDebug() << "=====================";
 
-    if(!controller.InitPort("/dev/tty.usbserial-140"))   // Windows: COMx    // mac: /dev/tty.usbserial-140
+    if(!controller.InitPort("/dev/tty.usbserial-1110"))   // Windows: COMx    // mac: /dev/tty.usbserial-140
     {
         qDebug() << "串口连接失败，程序退出。";
         return 1;
@@ -109,19 +106,19 @@ int main(int argc, char *argv[])
     QMap<QString, ReagentConfig> reagentConfigs;
     
     reagentConfigs["PBS"] = {"PBS", 1};                      // PBS洗涤液 -> 第一个切换阀通道1
-    reagentConfigs["固定液"] = {"固定液", 2};                 // 固定液 -> 第一个切换阀通道2  
-    reagentConfigs["通透剂"] = {"通透剂", 3};                 // 通透剂 -> 第一个切换阀通道3
-    reagentConfigs["封闭液"] = {"封闭液", 4};                 // 封闭液 -> 第一个切换阀通道4
-    reagentConfigs["一抗稀释液"] = {"一抗稀释液", 5};         // 一抗稀释液 -> 第一个切换阀通道5
-    reagentConfigs["二抗稀释液"] = {"二抗稀释液", 6};         // 二抗稀释液 -> 第一个切换阀通道6
+    //reagentConfigs["固定液"] = {"固定液", 2};                 // 固定液 -> 第一个切换阀通道2
+    //reagentConfigs["通透剂"] = {"通透剂", 3};                 // 通透剂 -> 第一个切换阀通道3
+    //reagentConfigs["封闭液"] = {"封闭液", 4};                 // 封闭液 -> 第一个切换阀通道4
+    //reagentConfigs["一抗稀释液"] = {"一抗稀释液", 5};         // 一抗稀释液 -> 第一个切换阀通道5
+    //reagentConfigs["二抗稀释液"] = {"二抗稀释液", 6};         // 二抗稀释液 -> 第一个切换阀通道6
     
     // 配置样品与第二个切换阀通道的映射关系
     QMap<QString, SampleConfig> sampleConfigs;
     
     sampleConfigs["废液缸"] = {"废液缸", 1};                    // 废液缸 -> 第二个切换阀通道1
-    sampleConfigs["样品1"] = {"样品1", 2};                     // 样品1 -> 第二个切换阀通道2
-    sampleConfigs["样品2"] = {"样品2", 3};                    // 样品2 -> 第二个切换阀通道3
-    sampleConfigs["样品3"] = {"样品3", 4};                    // 样品3 -> 第二个切换阀通道4
+    //sampleConfigs["样品1"] = {"样品1", 2};                     // 样品1 -> 第二个切换阀通道2
+    //sampleConfigs["样品2"] = {"样品2", 3};                    // 样品2 -> 第二个切换阀通道3
+    //sampleConfigs["样品3"] = {"样品3", 4};                    // 样品3 -> 第二个切换阀通道4
     
     // 应用配置到controller
     controller.SetReagentConfig(reagentConfigs);
@@ -197,12 +194,10 @@ int main(int argc, char *argv[])
     QObject::connect(&a, &QCoreApplication::aboutToQuit, &controller, [&controller](){
         qDebug() << "应用程序即将退出，正在安全停止所有设备...";
         
-        // 多次调用确保设备完全停止
-        for (int i = 0; i < 3; i++) {
-            controller.StopAllDevices();
-            QCoreApplication::processEvents();  // 处理事件确保命令发送
-            QThread::msleep(200);  // 等待命令执行
-        }
+
+        controller.StopAllDevices();
+        QCoreApplication::processEvents();  // 处理事件确保命令发送
+        QThread::msleep(200);  // 等待命令执行
         
         controller.ClosePort();
         qDebug() << "设备已安全停止";

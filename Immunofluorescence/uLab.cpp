@@ -77,8 +77,8 @@ void ULab::ClosePort()
 void ULab::Rotate(bool start, bool direction, uint8_t id)
 {
     wrtCmdList.append(GenCMD(0x0A, id, !direction ? 0x01 : 0x00, start ? 0x01 : 0x02));
-    emit SendMessage("Peristaltic pump " + (start ? (QString("start to rotate in ") +
-                                                     (direction ? "normal" : "reverse") + " direction") : " stop rotating"));
+    emit SendMessage(QString("Peristaltic pump (ID:%1)").arg(id) + (start ? (QString("start to rotate in ") +
+                                               (direction ? "normal" : "reverse") + " direction") : " stop rotating"));
 }
 
 void ULab::SetSpeed(uint16_t speed, uint8_t id)
@@ -803,26 +803,21 @@ void ULab::StopAllDevices()
     m_shouldStop.storeRelaxed(1);
     QCoreApplication::instance()->setProperty("shouldStop", true);
     
-    // 立即停止所有蠕动泵 - 多次发送确保可靠停止
-    for (int i = 0; i < 3; i++) {  // 发送3次停止命令确保可靠性
-        Rotate(false, true, PUMP_IN_ID);   // 停止加液泵
-        Rotate(false, true, PUMP_OUT_ID);  // 停止抽液泵
-        
-        // 发送蠕动泵停止命令（气泵控制板连接的蠕动泵）
-        PeristalticPumpRotate(false);
-        
-        // 立即发送命令
-        if (pPort && pPort->isOpen()) {
-            while (!wrtCmdList.isEmpty()) {
-                QByteArray cmd = wrtCmdList.takeFirst();
-                pPort->write(cmd);
-                pPort->flush();
-                MSleep(10);  // 短暂间隔确保命令发送
-            }
+    // 立即停止所有蠕动泵
+    Rotate(false, true, PUMP_IN_ID);   // 停止加液泵
+    Rotate(false, true, PUMP_OUT_ID);  // 停止抽液泵
+
+    // 立即发送命令
+    if (pPort && pPort->isOpen()) {
+        while (!wrtCmdList.isEmpty()) {
+            QByteArray cmd = wrtCmdList.takeFirst();
+            pPort->write(cmd);
+            pPort->flush();
+            MSleep(10);  // 短暂间隔确保命令发送
         }
-        
-        MSleep(50);  // 短暂间隔后重复发送
     }
+
+    MSleep(50);  // 短暂间隔后重复发送
     
     // 清空剩余的待发送命令队列
     wrtCmdList.clear();
