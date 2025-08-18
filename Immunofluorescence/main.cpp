@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QTimer>
+#include <QThread>
 #include <csignal>
 #include <QSocketNotifier>
 #include <QTextStream>
@@ -15,7 +16,12 @@ void signalHandler(int signal)
     qDebug() << "接收到信号" << signal << "，正在安全停止所有设备...";
     
     if (g_controller) {
-        g_controller->StopAllDevices();
+        // 多次调用确保设备停止
+        for (int i = 0; i < 2; i++) {
+            g_controller->StopAllDevices();
+            QCoreApplication::processEvents();  // 处理事件确保命令发送
+            QThread::msleep(100);  // 短暂等待
+        }
         g_controller->ClosePort();
     }
     
@@ -35,8 +41,15 @@ int main(int argc, char *argv[])
     // 注册信号处理函数
     std::signal(SIGINT, signalHandler);   // Ctrl+C
     std::signal(SIGTERM, signalHandler);  // 终止信号
+    std::signal(SIGABRT, signalHandler);  // 异常终止
 #ifdef SIGBREAK
     std::signal(SIGBREAK, signalHandler); // Windows Ctrl+Break
+#endif
+#ifdef Q_OS_WIN
+    // Windows特有信号
+    std::signal(SIGFPE, signalHandler);   // 浮点异常
+    std::signal(SIGILL, signalHandler);   // 非法指令
+    std::signal(SIGSEGV, signalHandler);  // 段错误
 #endif
 
     // 将 controller 对象的 SendMessage 信号，连接到一个用于打印的 Lambda 槽函数
@@ -183,7 +196,14 @@ int main(int argc, char *argv[])
     // 确保在应用退出前关闭端口，可以连接 aboutToQuit 信号
     QObject::connect(&a, &QCoreApplication::aboutToQuit, &controller, [&controller](){
         qDebug() << "应用程序即将退出，正在安全停止所有设备...";
-        controller.StopAllDevices();
+        
+        // 多次调用确保设备完全停止
+        for (int i = 0; i < 3; i++) {
+            controller.StopAllDevices();
+            QCoreApplication::processEvents();  // 处理事件确保命令发送
+            QThread::msleep(200);  // 等待命令执行
+        }
+        
         controller.ClosePort();
         qDebug() << "设备已安全停止";
     });
