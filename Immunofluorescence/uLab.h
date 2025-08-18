@@ -136,6 +136,8 @@ public:
     
     void WaitForUserInput(const QString& message);
     
+    void WaitForCommandQueueEmpty();  // 等待命令队列清空
+    
     void SetReagentConfig(const QMap<QString, ReagentConfig>& config);
     void SetSampleConfig(const QMap<QString, SampleConfig>& config);
     void SetPumpInterval(uint interval_ms);

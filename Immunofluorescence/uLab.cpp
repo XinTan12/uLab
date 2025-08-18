@@ -452,6 +452,24 @@ void MSleepInterruptible(uint msec)
     }
 }
 
+// 等待命令队列清空
+void ULab::WaitForCommandQueueEmpty()
+{
+    const int maxWaitTime = 2000; // 最多等待2秒
+    const int checkInterval = 50;  // 每50ms检查一次
+    int elapsed = 0;
+    
+    while (!wrtCmdList.isEmpty() && elapsed < maxWaitTime) {
+        MSleep(checkInterval);
+        elapsed += checkInterval;
+    }
+    
+    // 额外等待一个命令发送间隔，确保最后一个命令也发送完成
+    if (elapsed < maxWaitTime) {
+        MSleep(CMD_INTERVAL + 50);
+    }
+}
+
 
 void ULab::SendData(const QByteArray &data)
 {
@@ -512,10 +530,20 @@ void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed s
 
     // 切换第一个切换阀到试剂通道
     GotoChannel(0x00, reagent.valve_channel, REAGENT_VALVE_ID);
+    
+    // 等待命令发送完成
+    WaitForCommandQueueEmpty();
+    
+    // 等待第一个切换阀完成切换
     MSleep(VALVE_SWITCH_DELAY_MS);
     
     // 切换第二个切换阀到样品通道
     GotoChannel(0x00, sample.valve_channel, SAMPLE_VALVE_ID);
+    
+    // 等待命令发送完成
+    WaitForCommandQueueEmpty();
+    
+    // 等待第二个切换阀完成切换
     MSleep(VALVE_SWITCH_DELAY_MS);
 
     // 执行加液操作
@@ -579,10 +607,20 @@ void ULab::WashPipeline(const QString& reagent_name, const QString& sample_name)
 
     // 切换第一个切换阀到试剂通道
     GotoChannel(0x00, reagent.valve_channel, REAGENT_VALVE_ID);
+    
+    // 等待命令发送完成
+    WaitForCommandQueueEmpty();
+    
+    // 等待第一个切换阀完成切换
     MSleep(VALVE_SWITCH_DELAY_MS);
     
     // 切换第二个切换阀到废液缸通道
     GotoChannel(0x00, sample.valve_channel, SAMPLE_VALVE_ID);
+    
+    // 等待命令发送完成
+    WaitForCommandQueueEmpty();
+    
+    // 等待第二个切换阀完成切换
     MSleep(VALVE_SWITCH_DELAY_MS);
 
     // 执行冲洗操作 - 使用固定的速度和时间
@@ -710,12 +748,23 @@ void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wa
     emit SendMessage(QString("  > 切换第一个阀到试剂通道%1").arg(reagentChannel));
     // 切换到试剂通道
     GotoChannel(0x00, reagentChannel, REAGENT_VALVE_ID);
+    
+    // 等待命令发送完成
+    WaitForCommandQueueEmpty();
+    
+    // 等待第一个切换阀完成切换
     MSleep(VALVE_SWITCH_DELAY_MS);
     
-    emit SendMessage(QString("  > 切换第二个阀到样品通道%1").arg(sampleChannel));
+    emit SendMessage(QString("  > 第一个阀切换完成，开始切换第二个阀到样品通道%1").arg(sampleChannel));
     // 切换到样品通道
     GotoChannel(0x00, sampleChannel, SAMPLE_VALVE_ID);
+    
+    // 等待命令发送完成
+    WaitForCommandQueueEmpty();
+    
+    // 等待第二个切换阀完成切换
     MSleep(VALVE_SWITCH_DELAY_MS);
+    emit SendMessage(QString("  > 第二个阀切换完成"));
     
     // 启动加液泵进行冲洗
     SetSpeed(WASH_SPEED, PUMP_IN_ID);
@@ -764,8 +813,14 @@ void ULab::StopAllDevices()
 
 void ULab::WaitForUserInput(const QString& message)
 {
+    QString separator = QString("=").repeated(50);
+    emit SendMessage(QString("\n") + separator);
     emit SendMessage(message);
-    emit SendMessage("提示：请在Qt Creator的应用程序输出框下方输入命令");
+    emit SendMessage(QString("请在Qt Creator应用程序输出框下方的输入框中输入:"));
+    emit SendMessage(QString("  - 输入 'c' 或 'continue' 继续执行"));
+    emit SendMessage(QString("  - 输入 'q' 或 'quit' 退出程序"));
+    emit SendMessage(QString("然后按回车键确认"));
+    emit SendMessage(separator);
     
     m_waitingForInput = true;
     m_userInput.clear();
@@ -801,11 +856,15 @@ void ULab::WaitForUserInput(const QString& message)
 
 void ULab::onUserInputReceived(QString input)
 {
+    emit SendMessage(QString("调试：接收到输入信息 '%1'").arg(input));
+    
     if (!m_waitingForInput) {
+        emit SendMessage(QString("调试：当前不在等待输入状态，忽略输入"));
         return;
     }
     
     QString cleanInput = input.trimmed().toLower();
+    emit SendMessage(QString("调试：处理清理后的输入 '%1'").arg(cleanInput));
     
     if (cleanInput == "continue" || cleanInput == "c") {
         emit SendMessage(QString("收到继续指令，程序继续执行"));
@@ -815,7 +874,9 @@ void ULab::onUserInputReceived(QString input)
         m_waitingForInput = false;
         QCoreApplication::exit(0);
     } else {
-        emit SendMessage(QString("无效输入 '%1'，请输入 'continue'/'c' 继续，或 'quit'/'q' 退出:").arg(input));
+        emit SendMessage(QString("无效输入 '%1'，请输入:").arg(input));
+        emit SendMessage(QString("  - 'continue' 或 'c' 继续"));
+        emit SendMessage(QString("  - 'quit' 或 'q' 退出"));
     }
 }
 

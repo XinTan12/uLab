@@ -45,15 +45,22 @@ int main(int argc, char *argv[])
         qDebug().noquote() << msg;           // 使用 noquote() 可以去掉字符串两边的引号，输出更美观
     });
 
-    // 添加一个简单的输入处理机制
+    // 添加一个更强化的输入处理机制
     QTimer inputTimer;
     inputTimer.setInterval(100); // 每100ms检查一次输入
     QTextStream inputStream(stdin);
     
+    // 设置stdin为非缓冲模式（Windows下可能需要）
+#ifdef Q_OS_WIN
+    setbuf(stdin, NULL);
+#endif
+    
     QObject::connect(&inputTimer, &QTimer::timeout, [&controller, &inputStream]() {
-        if (inputStream.device()->bytesAvailable() > 0) {
+        // 尝试读取一行输入
+        if (inputStream.device()->isReadable()) {
             QString line = inputStream.readLine();
             if (!line.isEmpty()) {
+                qDebug() << "接收到用户输入:" << line;
                 // 发射用户输入信号
                 emit controller.UserInputReceived(line);
             }
@@ -61,6 +68,12 @@ int main(int argc, char *argv[])
     });
     
     inputTimer.start();
+    
+    // 输出输入提示
+    qDebug() << "=== 用户输入提示 ===";
+    qDebug() << "在Qt Creator的应用程序输出框下方的输入框中输入命令";
+    qDebug() << "当程序提示等待用户输入时，输入 'c' 或 'continue' 继续执行";
+    qDebug() << "=====================";
 
     if(!controller.InitPort("/dev/tty.usbserial-140"))   // Windows: COMx    // mac: /dev/tty.usbserial-140
     {
