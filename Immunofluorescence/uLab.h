@@ -16,8 +16,8 @@
 #define READ_INTERVAL           1000           //发送查询指令间隔，单位：ms
 #define FLOW_INTERVAL           6000           //发送查询气压和流量指令间隔，单位：ms
 
-#define REAGENT_VALVE_ID        0      // 第一个切换阀ID (连接试剂) - 直接连接电路板
-#define SAMPLE_VALVE_ID         1      // 第二个切换阀ID (连接样品) - RS485串联连接
+#define REAGENT_VALVE_ADDR      0      // 第一个切换阀地址 (连接试剂)
+#define SAMPLE_VALVE_ADDR       1      // 第二个切换阀地址 (连接样品)
 #define PUMP_IN_ID              1      // 第一个蠕动泵ID (加液)
 #define PUMP_OUT_ID             8      // 第一个蠕动泵ID (抽液)
 #define VALVE_SWITCH_DELAY_MS   1000   // 切换阀通道切换延时
@@ -78,7 +78,7 @@ struct SampleConfig
     uint8_t valve_channel;
 };
 
-void MSleep(uint msec);             //阻塞延时
+void MSleep(uint msec);              //阻塞延时
 void MSleepInterruptible(uint msec); //可中断的延时
 
 class ULab : public QObject
