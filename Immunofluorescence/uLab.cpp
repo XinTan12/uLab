@@ -418,7 +418,7 @@ QString GetAxisName(AXIS axis)
     }
 }
 
-// 非阻塞的延时函数
+// 延时函数，阻塞当前函数执行，但仍能处理Qt事件，串口数据接收、定时器等可继续工作
 void MSleep(uint msec)
 {
     QEventLoop loop;
@@ -452,25 +452,6 @@ void MSleepInterruptible(uint msec)
         }
     }
 }
-
-// 等待命令队列清空
-void ULab::WaitForCommandQueueEmpty()
-{
-    const int maxWaitTime = 2000; // 最多等待2秒
-    const int checkInterval = 50;  // 每50ms检查一次
-    int elapsed = 0;
-    
-    while (!wrtCmdList.isEmpty() && elapsed < maxWaitTime) {
-        MSleep(checkInterval);
-        elapsed += checkInterval;
-    }
-    
-    // 额外等待一个命令发送间隔，确保最后一个命令也发送完成
-    if (elapsed < maxWaitTime) {
-        MSleep(CMD_INTERVAL + 50);
-    }
-}
-
 
 void ULab::SendData(const QByteArray &data)
 {
@@ -532,21 +513,13 @@ void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed s
     // 切换第一个切换阀到试剂通道
     emit SendMessage(QString("  > 切换试剂阀到通道%1").arg(reagent.valve_channel));
     GotoChannel(REAGENT_VALVE_ADDR, reagent.valve_channel, 0x01);
-
-    // 等待命令发送完成
-    //WaitForCommandQueueEmpty();
     
-    // 等待第一个切换阀完成切换
     MSleep(VALVE_SWITCH_DELAY_MS);
     
     // 切换第二个切换阀到样品通道
     emit SendMessage(QString("  > 切换样品阀到通道%1").arg(sample.valve_channel));
     GotoChannel(SAMPLE_VALVE_ADDR, sample.valve_channel, 0x01);
     
-    // 等待命令发送完成
-    //WaitForCommandQueueEmpty();
-    
-    // 等待第二个切换阀完成切换
     MSleep(VALVE_SWITCH_DELAY_MS);
 
     // 执行加液操作
@@ -610,20 +583,12 @@ void ULab::WashPipeline(const QString& reagent_name, const QString& sample_name)
 
     // 切换第一个切换阀到试剂通道
     GotoChannel(REAGENT_VALVE_ADDR, reagent.valve_channel, 0x01);
-    
-    // 等待命令发送完成
-    //WaitForCommandQueueEmpty();
-    
-    // 等待第一个切换阀完成切换
+
     MSleep(VALVE_SWITCH_DELAY_MS);
     
     // 切换第二个切换阀到废液缸通道
     GotoChannel(SAMPLE_VALVE_ADDR, sample.valve_channel, 0x01);
-    
-    // 等待命令发送完成
-    //WaitForCommandQueueEmpty();
-    
-    // 等待第二个切换阀完成切换
+
     MSleep(VALVE_SWITCH_DELAY_MS);
 
     // 执行冲洗操作 - 使用固定的速度和时间
@@ -751,22 +716,14 @@ void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wa
     emit SendMessage(QString("  > 切换第一个阀到试剂通道%1").arg(reagentChannel));
     // 切换到试剂通道
     GotoChannel(REAGENT_VALVE_ADDR, reagentChannel, 0x01);
-    
-    // 等待命令发送完成
-    //WaitForCommandQueueEmpty();
-    
-    // 等待第一个切换阀完成切换
+
     MSleep(VALVE_SWITCH_DELAY_MS);
     
     emit SendMessage(QString("  > 第一个阀切换完成，开始切换第二个阀到样品通道%1").arg(sampleChannel));
     // 切换到样品通道
     GotoChannel(SAMPLE_VALVE_ADDR, sampleChannel, 0x01);
     
-    // 等待命令发送完成
-    //WaitForCommandQueueEmpty();
-    
-    // 等待第二个切换阀完成切换
-    MSleep(VALVE_SWITCH_DELAY_MS );
+    //MSleep(VALVE_SWITCH_DELAY_MS);
     emit SendMessage(QString("  > 第二个阀切换完成"));
     
     // 启动加液泵进行冲洗
@@ -806,6 +763,9 @@ void ULab::StopAllDevices()
     
     // 立即停止所有蠕动泵
     Rotate(false, true, PUMP_IN_ID);   // 停止加液泵
+
+    MSleep(100);
+
     Rotate(false, true, PUMP_OUT_ID);  // 停止抽液泵
 
     // 立即发送命令

@@ -20,12 +20,12 @@
 #define SAMPLE_VALVE_ADDR       1      // 第二个切换阀地址 (连接样品)
 #define PUMP_IN_ID              1      // 第一个蠕动泵ID (加液)
 #define PUMP_OUT_ID             8      // 第一个蠕动泵ID (抽液)
-#define VALVE_SWITCH_DELAY_MS   1000   // 切换阀通道切换延时
+#define VALVE_SWITCH_DELAY_MS   500   // 切换阀通道切换延时
 #define DEAD_VOLUME             500    // 管路死体积
 
 // 冲洗管路
-#define WASH_SPEED                20.0    // 冲洗速度 (uL/s)
-#define WASH_DURATION_SEC         10      // 冲洗持续时间 (秒)
+#define WASH_SPEED                150.0    // 冲洗速度 (uL/s)
+#define WASH_DURATION_SEC         15      // 冲洗持续时间 (秒)
 
 enum DEVICE_CODE
 {

@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
     QMap<QString, ReagentConfig> reagentConfigs;
     
     reagentConfigs["PBS"] = {"PBS", 1};                      // PBS洗涤液 -> 第一个切换阀通道1
-    //reagentConfigs["固定液"] = {"固定液", 2};                 // 固定液 -> 第一个切换阀通道2
+    reagentConfigs["固定液"] = {"固定液", 2};                 // 固定液 -> 第一个切换阀通道2
     //reagentConfigs["通透剂"] = {"通透剂", 3};                 // 通透剂 -> 第一个切换阀通道3
     //reagentConfigs["封闭液"] = {"封闭液", 4};                 // 封闭液 -> 第一个切换阀通道4
     //reagentConfigs["一抗稀释液"] = {"一抗稀释液", 5};         // 一抗稀释液 -> 第一个切换阀通道5
@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
     QMap<QString, SampleConfig> sampleConfigs;
     
     sampleConfigs["废液缸"] = {"废液缸", 1};                    // 废液缸 -> 第二个切换阀通道1
-    //sampleConfigs["样品1"] = {"样品1", 2};                     // 样品1 -> 第二个切换阀通道2
+    sampleConfigs["样品1"] = {"样品1", 2};                     // 样品1 -> 第二个切换阀通道2
     //sampleConfigs["样品2"] = {"样品2", 3};                    // 样品2 -> 第二个切换阀通道3
     //sampleConfigs["样品3"] = {"样品3", 4};                    // 样品3 -> 第二个切换阀通道4
     
