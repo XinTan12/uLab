@@ -24,7 +24,8 @@ void signalHandler(int signal)
     }
     
     qDebug() << "设备已安全停止，程序退出";
-    QCoreApplication::exit(0);
+    //QCoreApplication::exit(0);  //只会退出Qt的事件循环，但程序的 main()后续代码还会继续执行。
+    std::exit(0); //彻底终止程序
 }
 
 
@@ -55,6 +56,8 @@ int main(int argc, char *argv[])
     QObject::connect(&controller, &ULab::SendMessage, [](const QString &msg) {
         qDebug().noquote() << msg;           // 使用 noquote() 可以去掉字符串两边的引号，输出更美观
     });
+
+    QObject::connect(&controller, &ULab::UserInputReceived, &controller, &ULab::onUserInputReceived, Qt::UniqueConnection);
 
     // 修改输入处理机制 - 适配Qt Creator环境
     QSocketNotifier* stdinNotifier = nullptr;
@@ -91,7 +94,7 @@ int main(int argc, char *argv[])
     });
 #endif
 
-    if(!controller.InitPort("/dev/tty.usbserial-1110"))   // Windows: COMx    // mac: /dev/tty.usbserial-140
+    if(!controller.InitPort("/dev/tty.usbserial-140"))   // Windows: COMx    // mac: /dev/tty.usbserial-140
     {
         qDebug() << "串口连接失败，程序退出。";
         return 1;
@@ -122,7 +125,7 @@ int main(int argc, char *argv[])
     QMap<QString, SampleConfig> sampleConfigs;
     
     sampleConfigs["废液缸"] = {"废液缸", 1};                    // 废液缸 -> 第二个切换阀通道1
-    //sampleConfigs["样品1"] = {"样品1", 2};                     // 样品1 -> 第二个切换阀通道2
+    sampleConfigs["样品1"] = {"样品1", 2};                     // 样品1 -> 第二个切换阀通道2
     //sampleConfigs["样品2"] = {"样品2", 3};                    // 样品2 -> 第二个切换阀通道3
     //sampleConfigs["样品3"] = {"样品3", 4};                    // 样品3 -> 第二个切换阀通道4
     
@@ -130,6 +133,11 @@ int main(int argc, char *argv[])
     controller.SetReagentConfig(reagentConfigs);
     controller.SetSampleConfig(sampleConfigs);
 
+    qDebug() << "\n\n=======================================================";
+    qDebug() << "*** 免疫荧光实验即将开始 ***";
+    qDebug() << "实验流程期间可随时在在下方 Terminal 输出框中:";
+    qDebug() << "- 输入 'q' 或 'quit' 或 ‘exit’ 退出程序";
+    qDebug() << "=======================================================";
 
     // ======================================================================
 

@@ -78,7 +78,7 @@ void ULab::ClosePort()
 void ULab::Rotate(bool start, bool direction, uint8_t id)
 {
     wrtCmdList.append(GenCMD(0x0A, id, !direction ? 0x01 : 0x00, start ? 0x01 : 0x02));
-    emit SendMessage(QString("Peristaltic pump (ID:%1)").arg(id) + (start ? (QString("start to rotate in ") +
+    emit SendMessage(QString("Peristaltic pump (ID:%1) ").arg(id) + (start ? (QString("start to rotate in ") +
                                                (direction ? "normal" : "reverse") + " direction") : " stop rotating"));
 }
 
@@ -91,7 +91,7 @@ void ULab::SetSpeed(uint16_t speed, uint8_t id)
 void ULab::GotoChannel(uint8_t addr, uint8_t channel, uint8_t id)
 {
     wrtCmdList.append(GenCMD(0x08, id, channel, addr));
-    emit SendMessage("Valve (ID:" + QString::number(id) + ") go to channel No." + QString::number(channel));
+    emit SendMessage("Valve (addr:" + QString::number(addr) + ") go to channel No." + QString::number(channel));
 }
 
 void ULab::Home(AXIS axis, DEVICE_CODE id)
@@ -479,15 +479,18 @@ void ULab::SetSampleConfig(const QMap<QString, SampleConfig>& config)
 
 void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed speed, const QString& sample_name, uint delay_sec)
 {
+    emit SendMessage("\n\n");
+    emit SendMessage(QString("=").repeated(60));
+
     // 检查试剂是否已配置
     if (!m_reagentConfigs.contains(reagent_name)) {
-        emit SendMessage(QString("错误：试剂: '%1' 未在配置中找到").arg(reagent_name));
+        emit SendMessage(QString("\n错误：试剂: [%1] 未在配置中找到").arg(reagent_name));
         return;
     }
     
     // 检查样品是否已配置
     if (!m_sampleConfigs.contains(sample_name)) {
-        emit SendMessage(QString("错误：'%1' 未在配置中找到").arg(sample_name));
+        emit SendMessage(QString("\n错误：'%1' 未在配置中找到").arg(sample_name));
         return;
     }
 
@@ -503,21 +506,21 @@ void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed s
         case FAST:   flow_speed = 100.0; break;  // 快速：100 uL/s
     }
 
-        emit SendMessage(QString("\n[加液操作]: %1uL %2 --> %3 (%4速)")
-                             .arg(QString::number(volume_ul),
-                                  reagent_name,
-                                  sample_name,
-                                  speed == SLOW ? "慢" : (speed == MEDIUM ? "中" : "快")));
+    emit SendMessage(QString("\n[加液操作]: %1uL %2 --> %3 (%4速)")
+                         .arg(QString::number(volume_ul),
+                              reagent_name,
+                              sample_name,
+                              speed == SLOW ? "慢" : (speed == MEDIUM ? "中" : "快")));
 
 
     // 切换第一个切换阀到试剂通道
-    emit SendMessage(QString("  > 切换试剂阀到通道%1").arg(reagent.valve_channel));
+    emit SendMessage(QString("\n  > 切换[试剂阀] 到 [通道%1]").arg(reagent.valve_channel));
     GotoChannel(REAGENT_VALVE_ADDR, reagent.valve_channel, 0x01);
     
     MSleep(VALVE_SWITCH_DELAY_MS);
     
     // 切换第二个切换阀到样品通道
-    emit SendMessage(QString("  > 切换样品阀到通道%1").arg(sample.valve_channel));
+    emit SendMessage(QString("\n  > 切换[样品阀] 到 [通道%1]").arg(sample.valve_channel));
     GotoChannel(SAMPLE_VALVE_ADDR, sample.valve_channel, 0x01);
     
     MSleep(VALVE_SWITCH_DELAY_MS);
@@ -525,7 +528,7 @@ void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed s
     // 执行加液操作
     
     if (flow_speed <= 0) {
-        emit SendMessage("  > 错误：流速输入有误，无法计算时长。");
+        emit SendMessage("\n  > 错误：流速输入有误，无法计算时长。");
         return;
     }
     
@@ -534,42 +537,42 @@ void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed s
     // 启动蠕动泵加液
     SetSpeed(flow_speed, PUMP_IN_ID);
     Rotate(true, true, PUMP_IN_ID);
-    emit SendMessage(QString("  > 开始加液"));
+    emit SendMessage(QString("\n  > 开始加液"));
 
-    MSleep(duration_ms);
+    MSleepInterruptible(duration_ms);
     Rotate(false, true, PUMP_IN_ID);
-    emit SendMessage(QString("  > 加液完成"));
+    emit SendMessage(QString("\n  > 加液完成"));
     
     // 用户设置的间隔时间(转换秒为毫秒)
     uint interval_ms = delay_sec * 1000;
     if (interval_ms > 0) {
-        emit SendMessage(QString("  > 等待 %1 秒...").arg(delay_sec));
+        emit SendMessage(QString("\n  > 等待 %1 秒...").arg(delay_sec));
         MSleep(interval_ms);
     }
 
     // 启动蠕动泵抽液
     SetSpeed(flow_speed, PUMP_OUT_ID);
     Rotate(true, false, PUMP_OUT_ID);
-    emit SendMessage(QString("  > 开始抽液"));
+    emit SendMessage(QString("\n  > 开始抽液"));
 
-    MSleep(duration_ms);
+    MSleepInterruptible(duration_ms);
     Rotate(false, false, PUMP_OUT_ID);
-    emit SendMessage(QString("  > 抽液完成"));
+    emit SendMessage(QString("\n  > 抽液完成"));
 
-    emit SendMessage(QString("  > '%1' 操作完成.").arg(reagent_name));
+    emit SendMessage(QString("\n  > '%1' 操作完成.").arg(reagent_name));
 }
 
 void ULab::WashPipeline(const QString& reagent_name, const QString& sample_name)
 {
     // 检查试剂是否已配置
     if (!m_reagentConfigs.contains(reagent_name)) {
-        emit SendMessage(QString("错误：试剂: '%1' 未在配置中找到").arg(reagent_name));
+        emit SendMessage(QString("\n错误：试剂: [%1] 未在配置中找到").arg(reagent_name));
         return;
     }
 
     // 检查样品是否已配置
     if (!m_sampleConfigs.contains(sample_name)) {
-        emit SendMessage(QString("错误：'%1' 未在配置中找到").arg(sample_name));
+        emit SendMessage(QString("\n错误：[%1] 未在配置中找到").arg(sample_name));
         return;
     }
 
@@ -577,7 +580,7 @@ void ULab::WashPipeline(const QString& reagent_name, const QString& sample_name)
     ReagentConfig reagent = m_reagentConfigs[reagent_name];
     SampleConfig sample = m_sampleConfigs[sample_name];
 
-    emit SendMessage(QString("\n[冲洗管路]: 使用 %1 冲洗到 %2")
+    emit SendMessage(QString("\n[冲洗管路]: 使用 [%1] 冲洗到 [%2]")
                          .arg(reagent_name, sample_name));
 
 
@@ -592,7 +595,7 @@ void ULab::WashPipeline(const QString& reagent_name, const QString& sample_name)
     MSleep(VALVE_SWITCH_DELAY_MS);
 
     // 执行冲洗操作 - 使用固定的速度和时间
-    emit SendMessage(QString("  > 开始冲洗管路"));
+    emit SendMessage(QString("\n  > 开始冲洗管路"));
 
     // 启动蠕动泵进行冲洗
     SetSpeed(WASH_SPEED, PUMP_IN_ID);
@@ -601,13 +604,13 @@ void ULab::WashPipeline(const QString& reagent_name, const QString& sample_name)
     MSleepInterruptible(WASH_DURATION_SEC * 1000);  // 使用可中断的延时
 
     Rotate(false, true, PUMP_IN_ID);
-    emit SendMessage(QString("  > 管路冲洗完成"));
+    emit SendMessage(QString("\n  > 管路冲洗完成"));
 }
 
 void ULab::InitialWashPipelines()
 {
     emit SendMessage(QString("\n\n*** 开始初始化管路冲洗 ***"));
-    emit SendMessage(QString("注意：初始时所有通道都连接PBS，冲洗完成后请更换为实际试剂"));
+    emit SendMessage(QString("\n注意：初始时所有通道都连接[PBS]，冲洗完成后请更换为[实际试剂]"));
     
     // 获取试剂通道和样品通道列表，并按通道号排序
     QList<uint8_t> reagentChannels;
@@ -703,28 +706,28 @@ void ULab::InitialWashPipelines()
     }
     
     emit SendMessage(QString("\n*** 初始化管路冲洗完成 ***"));
-    emit SendMessage(QString("请现在更换为各通道的实际试剂"));
+    emit SendMessage(QString("请现在更换为各通道的[实际试剂]"));
     
     // 等待用户输入确认
-    WaitForUserInput("请完成试剂更换后，输入 'continue' 或 'c' 继续执行实验:");
+    WaitForUserInput("请完成试剂更换后，在下方 Terminal 输出框中:");
     
     emit SendMessage(QString("继续执行实验流程...\n"));
 }
 
 void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wasteChannel)
 {
-    emit SendMessage(QString("  > 切换第一个阀到试剂通道%1").arg(reagentChannel));
+    emit SendMessage(QString("\n  > 切换第一个阀到[试剂通道%1]").arg(reagentChannel));
     // 切换到试剂通道
     GotoChannel(REAGENT_VALVE_ADDR, reagentChannel, 0x01);
 
     MSleep(VALVE_SWITCH_DELAY_MS);
     
-    emit SendMessage(QString("  > 第一个阀切换完成，开始切换第二个阀到样品通道%1").arg(sampleChannel));
+    emit SendMessage(QString("\n  > 第一个阀切换完成，开始切换第二个阀到[样品通道%1]").arg(sampleChannel));
     // 切换到样品通道
     GotoChannel(SAMPLE_VALVE_ADDR, sampleChannel, 0x01);
     
     //MSleep(VALVE_SWITCH_DELAY_MS);
-    emit SendMessage(QString("  > 第二个阀切换完成"));
+    emit SendMessage(QString("\n  > 第二个阀切换完成"));
     
     // 启动加液泵进行冲洗
     SetSpeed(WASH_SPEED, PUMP_IN_ID);
@@ -732,11 +735,11 @@ void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wa
     MSleepInterruptible(WASH_DURATION_SEC * 1000);  // 使用可中断的延时
     Rotate(false, true, PUMP_IN_ID);
     
-    emit SendMessage(QString("  > 加液完成"));
+    emit SendMessage(QString("\n  > 加液完成"));
     
     // 判断是否需要抽液：如果样品通道不是废液缸，则需要抽液
     if (sampleChannel != wasteChannel) {
-        emit SendMessage(QString("  > 开始抽液（非废液缸）"));
+        emit SendMessage(QString("\n  > 开始抽液（非废液缸）"));
         
         // 启动抽液泵
         SetSpeed(WASH_SPEED, PUMP_OUT_ID);
@@ -744,18 +747,18 @@ void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wa
         MSleepInterruptible(WASH_DURATION_SEC * 1000);  // 使用可中断的延时
         Rotate(false, true, PUMP_OUT_ID);
         
-        emit SendMessage(QString("  > 抽液完成"));
+        emit SendMessage(QString("\n  > 抽液完成"));
     } else {
-        emit SendMessage(QString("  > 跳过抽液（废液缸）"));
+        emit SendMessage(QString("\n  > 跳过抽液（废液缸）"));
     }
     
-    emit SendMessage(QString("  > 冲洗完成"));
+    emit SendMessage(QString("\n  > 冲洗完成"));
     MSleep(500); // 短暂间隔
 }
 
 void ULab::StopAllDevices()
 {
-    emit SendMessage(QString("正在停止所有设备..."));
+    emit SendMessage(QString("\n正在停止所有设备..."));
     
     // 设置停止标志
     m_shouldStop.storeRelaxed(1);
@@ -789,26 +792,26 @@ void ULab::StopAllDevices()
     //     pPort->waitForBytesWritten(1000);  // 等待最多1秒
     // }
     
-    emit SendMessage(QString("所有设备已停止"));
+    emit SendMessage(QString("\n所有设备已停止"));
 }
 
 void ULab::WaitForUserInput(const QString& message)
 {
-    QString separator = QString("=").repeated(50);
+    QString separator = QString("=").repeated(60);
     emit SendMessage(QString("\n") + separator);
     emit SendMessage(message);
-    emit SendMessage(QString("请在Qt Creator应用程序输出框下方的输入框中输入:"));
     emit SendMessage(QString("  - 输入 'c' 或 'continue' 继续执行"));
-    emit SendMessage(QString("  - 输入 'q' 或 'quit' 退出程序"));
+    emit SendMessage(QString("  - 输入 'q' 或 'quit' 或 ‘exit’ 退出程序"));
     emit SendMessage(QString("然后按回车键确认"));
-    emit SendMessage(QString("调试：正在等待用户输入，当前状态: m_waitingForInput=%1").arg(m_waitingForInput));
+    //emit SendMessage(QString("调试：正在等待用户输入，当前状态: m_waitingForInput=%1").arg(m_waitingForInput));
     emit SendMessage(separator);
+    emit SendMessage(QString("\n - 请输入："));
     
     m_waitingForInput = true;
     m_userInput.clear();
     
     // 连接信号槽以处理用户输入
-    connect(this, &ULab::UserInputReceived, this, &ULab::onUserInputReceived, Qt::UniqueConnection);
+    //connect(this, &ULab::UserInputReceived, this, &ULab::onUserInputReceived, Qt::UniqueConnection);
     
     // 创建事件循环等待用户输入
     QEventLoop loop;
@@ -833,28 +836,42 @@ void ULab::WaitForUserInput(const QString& message)
     timer.stop();
     
     // 断开连接
-    disconnect(this, &ULab::UserInputReceived, this, &ULab::onUserInputReceived);
+    //disconnect(this, &ULab::UserInputReceived, this, &ULab::onUserInputReceived);
 }
 
 void ULab::onUserInputReceived(QString input)
 {
-    emit SendMessage(QString("调试：接收到输入信息 '%1'").arg(input));
-    
-    if (!m_waitingForInput) {
-        emit SendMessage(QString("调试：当前不在等待输入状态，忽略输入"));
+    //emit SendMessage(QString("调试：接收到输入信息 '%1'").arg(input));
+
+    QString cleanInput = input.trimmed().toLower();
+    //emit SendMessage(QString("调试：处理清理后的输入 '%1'").arg(cleanInput));
+
+    // quit命令全局有效，无论是否在等待输入状态
+    if (cleanInput == "quit" || cleanInput == "q" || cleanInput == "exit") {
+        emit SendMessage(QString("收到退出指令，正在停止所有设备并退出程序..."));
+
+        // 停止所有设备
+        StopAllDevices();
+
+        // 如果正在等待用户输入，结束等待
+        if (m_waitingForInput) {
+            m_waitingForInput = false;
+        }
+
+        //QCoreApplication::exit(0);  //只会退出Qt的事件循环，但程序的 main()后续代码还会继续执行。
+        std::exit(0); //彻底终止程序
         return;
     }
-    
-    QString cleanInput = input.trimmed().toLower();
-    emit SendMessage(QString("调试：处理清理后的输入 '%1'").arg(cleanInput));
-    
+
+    // 只有在等待输入状态下才处理continue命令
+    if (!m_waitingForInput) {
+        //emit SendMessage(QString("调试：当前不在等待输入状态，除quit外的命令被忽略"));
+        return;
+    }
+
     if (cleanInput == "continue" || cleanInput == "c") {
         emit SendMessage(QString("收到继续指令，程序继续执行"));
         m_waitingForInput = false;
-    } else if (cleanInput == "quit" || cleanInput == "q" || cleanInput == "exit") {
-        emit SendMessage(QString("收到退出指令，程序退出"));
-        m_waitingForInput = false;
-        QCoreApplication::exit(0);
     } else {
         emit SendMessage(QString("无效输入 '%1'，请输入:").arg(input));
         emit SendMessage(QString("  - 'continue' 或 'c' 继续"));

@@ -142,6 +142,9 @@ public:
     void SetSampleConfig(const QMap<QString, SampleConfig>& config);
     void SetPumpInterval(uint interval_ms);
 
+public slots:
+    void onUserInputReceived(QString input);  // 新增：处理用户输入的槽函数
+
 signals:
     void SendMessage(QString msg);
     void UpdatePos(DEVICE_CODE id, AXIS axis, int pos);                                     //通知主界面更新位置信息
@@ -154,7 +157,6 @@ signals:
 private slots:
     void RefreshPort();
     void ParsePort();
-    void onUserInputReceived(QString input);  // 新增：处理用户输入的槽函数
     void GetPosLowX()
     {
         GetPos(AXIS_X);
