@@ -801,6 +801,7 @@ void ULab::WaitForUserInput(const QString& message)
     emit SendMessage(QString("  - 输入 'c' 或 'continue' 继续执行"));
     emit SendMessage(QString("  - 输入 'q' 或 'quit' 退出程序"));
     emit SendMessage(QString("然后按回车键确认"));
+    emit SendMessage(QString("调试：正在等待用户输入，当前状态: m_waitingForInput=%1").arg(m_waitingForInput));
     emit SendMessage(separator);
     
     m_waitingForInput = true;
