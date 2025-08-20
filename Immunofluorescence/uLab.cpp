@@ -810,9 +810,6 @@ void ULab::WaitForUserInput(const QString& message)
     m_waitingForInput = true;
     m_userInput.clear();
     
-    // 连接信号槽以处理用户输入
-    //connect(this, &ULab::UserInputReceived, this, &ULab::onUserInputReceived, Qt::UniqueConnection);
-    
     // 创建事件循环等待用户输入
     QEventLoop loop;
     QTimer timer;
@@ -835,8 +832,6 @@ void ULab::WaitForUserInput(const QString& message)
     loop.exec();
     timer.stop();
     
-    // 断开连接
-    //disconnect(this, &ULab::UserInputReceived, this, &ULab::onUserInputReceived);
 }
 
 void ULab::onUserInputReceived(QString input)

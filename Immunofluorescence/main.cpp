@@ -17,9 +17,7 @@ void signalHandler(int signal)
     qDebug() << "接收到信号" << signal << "，正在安全停止所有设备...";
     
     if (g_controller) {
-            g_controller->StopAllDevices();
-            //QCoreApplication::processEvents();  // 处理事件确保命令发送
-            //QThread::msleep(100);  // 短暂等待
+        g_controller->StopAllDevices();
         g_controller->ClosePort();
     }
     
@@ -102,7 +100,7 @@ int main(int argc, char *argv[])
 
 
     // *********************************************************************************
-    //                                免疫荧光测试
+    //                                免疫荧光实验
     // *********************************************************************************
 
 
@@ -132,6 +130,7 @@ int main(int argc, char *argv[])
     // 应用配置到controller
     controller.SetReagentConfig(reagentConfigs);
     controller.SetSampleConfig(sampleConfigs);
+
 
     qDebug() << "\n\n=======================================================";
     qDebug() << "*** 免疫荧光实验即将开始 ***";
@@ -206,7 +205,7 @@ int main(int argc, char *argv[])
 
     // 确保在应用退出前关闭端口，可以连接 aboutToQuit 信号
     QObject::connect(&a, &QCoreApplication::aboutToQuit, [&controller, inputStream, stdinNotifier](){
-        qDebug() << "应用程序即将退出，正在安全停止所有设备...";
+        qDebug() << "\n应用程序即将退出，正在安全停止所有设备...";
         
         controller.StopAllDevices();
         controller.ClosePort();
@@ -219,7 +218,7 @@ int main(int argc, char *argv[])
             delete stdinNotifier;
         }
         
-        qDebug() << "设备已安全停止";
+        qDebug() << "\n设备已安全停止";
     });
 
     return a.exec();
