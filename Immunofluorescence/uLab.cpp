@@ -536,11 +536,11 @@ void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed s
 
     // 启动蠕动泵加液
     SetSpeed(flow_speed, PUMP_IN_ID);
-    Rotate(true, true, PUMP_IN_ID);
+    Rotate(true, false, PUMP_IN_ID);
     emit SendMessage(QString("\n  > 开始加液"));
 
     MSleepInterruptible(duration_ms);
-    Rotate(false, true, PUMP_IN_ID);
+    Rotate(false, false, PUMP_IN_ID);
     emit SendMessage(QString("\n  > 加液完成"));
     
     // 用户设置的间隔时间(转换秒为毫秒)
@@ -599,11 +599,11 @@ void ULab::WashPipeline(const QString& reagent_name, const QString& sample_name)
 
     // 启动蠕动泵进行冲洗
     SetSpeed(WASH_SPEED, PUMP_IN_ID);
-    Rotate(true, true, PUMP_IN_ID);
+    Rotate(true, false, PUMP_IN_ID);
 
     MSleepInterruptible(WASH_DURATION_SEC * 1000);  // 使用可中断的延时
 
-    Rotate(false, true, PUMP_IN_ID);
+    Rotate(false, false, PUMP_IN_ID);
     emit SendMessage(QString("\n  > 管路冲洗完成"));
 }
 
@@ -731,9 +731,9 @@ void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wa
     
     // 启动加液泵进行冲洗
     SetSpeed(WASH_SPEED, PUMP_IN_ID);
-    Rotate(true, true, PUMP_IN_ID);
+    Rotate(true, false, PUMP_IN_ID);
     MSleepInterruptible(WASH_DURATION_SEC * 1000);  // 使用可中断的延时
-    Rotate(false, true, PUMP_IN_ID);
+    Rotate(false, false, PUMP_IN_ID);
     
     emit SendMessage(QString("\n  > 加液完成"));
     
@@ -743,9 +743,9 @@ void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wa
         
         // 启动抽液泵
         SetSpeed(WASH_SPEED, PUMP_OUT_ID);
-        Rotate(true, true, PUMP_OUT_ID);  // 抽液方向
+        Rotate(true, false, PUMP_OUT_ID);  // 抽液方向
         MSleepInterruptible(WASH_DURATION_SEC * 1000);  // 使用可中断的延时
-        Rotate(false, true, PUMP_OUT_ID);
+        Rotate(false, false, PUMP_OUT_ID);
         
         emit SendMessage(QString("\n  > 抽液完成"));
     } else {
@@ -765,11 +765,11 @@ void ULab::StopAllDevices()
     QCoreApplication::instance()->setProperty("shouldStop", true);
     
     // 立即停止所有蠕动泵
-    Rotate(false, true, PUMP_IN_ID);   // 停止加液泵
+    Rotate(false, false, PUMP_IN_ID);   // 停止加液泵
 
     MSleep(100);
 
-    Rotate(false, true, PUMP_OUT_ID);  // 停止抽液泵
+    Rotate(false, false, PUMP_OUT_ID);  // 停止抽液泵
 
     // 立即发送命令
     // if (pPort && pPort->isOpen()) {

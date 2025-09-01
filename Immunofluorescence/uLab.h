@@ -20,7 +20,7 @@
 #define SAMPLE_VALVE_ADDR       1      // 第二个切换阀地址 (连接样品)
 #define PUMP_IN_ID              1      // 第一个蠕动泵ID (加液)
 #define PUMP_OUT_ID             8      // 第一个蠕动泵ID (抽液)
-#define VALVE_SWITCH_DELAY_MS   500   // 切换阀通道切换延时
+#define VALVE_SWITCH_DELAY_MS   4000   // 切换阀通道切换延时
 #define DEAD_VOLUME             500    // 管路死体积
 
 // 冲洗管路
