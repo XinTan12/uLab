@@ -6,6 +6,11 @@
 #include <QSocketNotifier>
 #include <QTextStream>
 #include <cstdio>
+#include <iostream>
+#include <string>
+#ifdef Q_OS_WIN
+#include <conio.h>
+#endif
 #include "uLab.h"
 
 // 全局指针，用于信号处理函数访问controller
@@ -62,15 +67,18 @@ int main(int argc, char *argv[])
     QTextStream* inputStream = nullptr;
     
 #ifdef Q_OS_WIN
-    // Windows下使用定时器轮询方式
+    // Windows下使用线程方式处理输入
     QTimer inputTimer;
-    inputTimer.setInterval(200); // 每200ms检查一次输入
+    inputTimer.setInterval(50); // 50ms检查一次，提高响应性
     inputStream = new QTextStream(stdin);
     
-    QObject::connect(&inputTimer, &QTimer::timeout, [&controller, inputStream]() {
-        // 检查stdin是否有数据可读
-        if (inputStream->device()->canReadLine()) {
-            QString line = inputStream->readLine().trimmed();
+    // 使用QThread在后台监听stdin，避免阻塞主线程
+    QObject::connect(&inputTimer, &QTimer::timeout, [&controller]() {
+        // 使用标准C函数检查stdin
+        if (_kbhit()) { // Windows特有的函数，检查键盘是否有输入
+            std::string stdLine;
+            std::getline(std::cin, stdLine);
+            QString line = QString::fromStdString(stdLine).trimmed();
             if (!line.isEmpty()) {
                 qDebug() << "接收到用户输入:" << line;
                 emit controller.UserInputReceived(line);
@@ -92,7 +100,7 @@ int main(int argc, char *argv[])
     });
 #endif
 
-    if(!controller.InitPort("/dev/tty.usbserial-140"))   // Windows: COMx    // mac: /dev/tty.usbserial-140
+    if(!controller.InitPort("COM5"))   // Windows: COMx    // mac: /dev/tty.usbserial-140
     {
         qDebug() << "串口连接失败，程序退出。";
         return 1;
@@ -113,7 +121,7 @@ int main(int argc, char *argv[])
     QMap<QString, ReagentConfig> reagentConfigs;
     
     reagentConfigs["PBS"] = {"PBS", 1};                      // PBS洗涤液 -> 第一个切换阀通道1
-    //reagentConfigs["固定液"] = {"固定液", 2};                 // 固定液 -> 第一个切换阀通道2
+    reagentConfigs["固定液"] = {"固定液", 2};                 // 固定液 -> 第一个切换阀通道2
     //reagentConfigs["通透剂"] = {"通透剂", 3};                 // 通透剂 -> 第一个切换阀通道3
     //reagentConfigs["封闭液"] = {"封闭液", 4};                 // 封闭液 -> 第一个切换阀通道4
     //reagentConfigs["一抗稀释液"] = {"一抗稀释液", 5};         // 一抗稀释液 -> 第一个切换阀通道5
@@ -124,8 +132,8 @@ int main(int argc, char *argv[])
     
     sampleConfigs["废液缸"] = {"废液缸", 1};                    // 废液缸 -> 第二个切换阀通道1
     sampleConfigs["样品1"] = {"样品1", 2};                     // 样品1 -> 第二个切换阀通道2
-    //sampleConfigs["样品2"] = {"样品2", 3};                    // 样品2 -> 第二个切换阀通道3
-    //sampleConfigs["样品3"] = {"样品3", 4};                    // 样品3 -> 第二个切换阀通道4
+    sampleConfigs["样品2"] = {"样品2", 3};                    // 样品2 -> 第二个切换阀通道3
+    sampleConfigs["样品3"] = {"样品3", 4};                    // 样品3 -> 第二个切换阀通道4
     
     // 应用配置到controller
     controller.SetReagentConfig(reagentConfigs);

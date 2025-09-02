@@ -91,7 +91,7 @@ void ULab::SetSpeed(uint16_t speed, uint8_t id)
 void ULab::GotoChannel(uint8_t addr, uint8_t channel, uint8_t id)
 {
     wrtCmdList.append(GenCMD(0x08, id, channel, addr));
-    emit SendMessage("Valve (addr:" + QString::number(addr) + ") go to channel No." + QString::number(channel));
+    emit SendMessage("Valve (ID:" + QString::number(id) +  ")(addr:" + QString::number(addr) + ") go to channel No." + QString::number(channel));
 }
 
 void ULab::Home(AXIS axis, DEVICE_CODE id)
@@ -501,9 +501,9 @@ void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed s
     // 根据速度枚举转换为实际流速值 (uL/s)
     double flow_speed = 0.0;
     switch (speed) {
-        case SLOW:   flow_speed = 20.0;  break;  // 慢速：20 uL/s
-        case MEDIUM: flow_speed = 50.0;  break;  // 中速：50 uL/s
-        case FAST:   flow_speed = 100.0; break;  // 快速：100 uL/s
+        case SLOW:   flow_speed = 50.0;  break;  // 慢速：50 uL/s
+        case MEDIUM: flow_speed = 100.0;  break;  // 中速：100 uL/s
+        case FAST:   flow_speed = 150.0; break;  // 快速：150 uL/s
     }
 
     emit SendMessage(QString("\n[加液操作]: %1uL %2 --> %3 (%4速)")
@@ -517,7 +517,7 @@ void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed s
     emit SendMessage(QString("\n  > 切换[试剂阀] 到 [通道%1]").arg(reagent.valve_channel));
     GotoChannel(REAGENT_VALVE_ADDR, reagent.valve_channel, 0x01);
     
-    MSleep(VALVE_SWITCH_DELAY_MS);
+    MSleep(50);
     
     // 切换第二个切换阀到样品通道
     emit SendMessage(QString("\n  > 切换[样品阀] 到 [通道%1]").arg(sample.valve_channel));
@@ -547,15 +547,21 @@ void ULab::AddLiquid(const QString& reagent_name, double volume_ul, FluidSpeed s
     uint interval_ms = delay_sec * 1000;
     if (interval_ms > 0) {
         emit SendMessage(QString("\n  > 等待 %1 秒...").arg(delay_sec));
-        MSleep(interval_ms);
+        MSleepInterruptible(interval_ms);
     }
+
+    // 第三个切换阀（抽液阀）切换到对应的样品通道
+    emit SendMessage(QString("\n  > 切换[抽液阀] 到 [通道%1]").arg(sample.valve_channel));
+    GotoChannel(0x00, sample.valve_channel, 0x08);
+
+    MSleep(VALVE_SWITCH_DELAY_MS);
 
     // 启动蠕动泵抽液
     SetSpeed(flow_speed, PUMP_OUT_ID);
     Rotate(true, false, PUMP_OUT_ID);
     emit SendMessage(QString("\n  > 开始抽液"));
 
-    MSleepInterruptible(duration_ms);
+    MSleepInterruptible(duration_ms + 5000);
     Rotate(false, false, PUMP_OUT_ID);
     emit SendMessage(QString("\n  > 抽液完成"));
 
@@ -587,7 +593,7 @@ void ULab::WashPipeline(const QString& reagent_name, const QString& sample_name)
     // 切换第一个切换阀到试剂通道
     GotoChannel(REAGENT_VALVE_ADDR, reagent.valve_channel, 0x01);
 
-    MSleep(VALVE_SWITCH_DELAY_MS);
+    MSleep(50);
     
     // 切换第二个切换阀到废液缸通道
     GotoChannel(SAMPLE_VALVE_ADDR, sample.valve_channel, 0x01);
@@ -720,13 +726,13 @@ void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wa
     // 切换到试剂通道
     GotoChannel(REAGENT_VALVE_ADDR, reagentChannel, 0x01);
 
-    MSleep(VALVE_SWITCH_DELAY_MS);
+    MSleep(50);
     
     emit SendMessage(QString("\n  > 第一个阀切换完成，开始切换第二个阀到[样品通道%1]").arg(sampleChannel));
     // 切换到样品通道
     GotoChannel(SAMPLE_VALVE_ADDR, sampleChannel, 0x01);
     
-    //MSleep(VALVE_SWITCH_DELAY_MS);
+    MSleep(VALVE_SWITCH_DELAY_MS);
     emit SendMessage(QString("\n  > 第二个阀切换完成"));
     
     // 启动加液泵进行冲洗
@@ -741,10 +747,15 @@ void ULab::performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wa
     if (sampleChannel != wasteChannel) {
         emit SendMessage(QString("\n  > 开始抽液（非废液缸）"));
         
+        // 第三个切换阀切换到对应的样品通道
+        GotoChannel(0x00, sampleChannel, 0x08);
+
+        MSleep(VALVE_SWITCH_DELAY_MS);
+
         // 启动抽液泵
         SetSpeed(WASH_SPEED, PUMP_OUT_ID);
         Rotate(true, false, PUMP_OUT_ID);  // 抽液方向
-        MSleepInterruptible(WASH_DURATION_SEC * 1000);  // 使用可中断的延时
+        MSleepInterruptible(WASH_DURATION_SEC * 1000 + 5000);  // 使用可中断的延时
         Rotate(false, false, PUMP_OUT_ID);
         
         emit SendMessage(QString("\n  > 抽液完成"));
