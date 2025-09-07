@@ -16,16 +16,16 @@
 #define READ_INTERVAL           1000           //发送查询指令间隔，单位：ms
 #define FLOW_INTERVAL           6000           //发送查询气压和流量指令间隔，单位：ms
 
-#define REAGENT_VALVE_ID        0      // 第一个切换阀ID (连接试剂)
-#define SAMPLE_VALVE_ID         1      // 第二个切换阀ID (连接样品)
+#define REAGENT_VALVE_ADDR      0      // 第一个切换阀地址 (连接试剂)
+#define SAMPLE_VALVE_ADDR       1      // 第二个切换阀地址 (连接样品)
 #define PUMP_IN_ID              1      // 第一个蠕动泵ID (加液)
 #define PUMP_OUT_ID             8      // 第一个蠕动泵ID (抽液)
-#define VALVE_SWITCH_DELAY_MS   1000   // 切换阀通道切换延时
+#define VALVE_SWITCH_DELAY_MS   5000   // 切换阀通道切换延时
 #define DEAD_VOLUME             500    // 管路死体积
 
 // 冲洗管路
-#define WASH_SPEED                20.0    // 冲洗速度 (uL/s)
-#define WASH_DURATION_SEC         10      // 冲洗持续时间 (秒)
+#define WASH_SPEED                150.0    // 冲洗速度 (uL/s)
+#define WASH_DURATION_SEC         15      // 冲洗持续时间 (秒)
 
 enum DEVICE_CODE
 {
@@ -78,8 +78,8 @@ struct SampleConfig
     uint8_t valve_channel;
 };
 
-void MSleep(uint msec);             //阻塞延时
-void MSleepInterruptible(uint msec); //可中断的延时
+void MSleep(uint msec);                                      //阻塞延时
+void MSleepInterruptible(uint msec);                         //可中断的延时
 
 class ULab : public QObject
 {
@@ -128,15 +128,20 @@ public:
     
     void WashPipeline(const QString& reagent_name, const QString& sample_name);
     
-    void InitialWashPipelines(uint reagent_switch_interval);
+    void InitialWashPipelines();
     
     void performWash(uint8_t reagentChannel, uint8_t sampleChannel, uint8_t wasteChannel);
     
     void StopAllDevices();
     
+    void WaitForUserInput(const QString& message);
+    
     void SetReagentConfig(const QMap<QString, ReagentConfig>& config);
     void SetSampleConfig(const QMap<QString, SampleConfig>& config);
     void SetPumpInterval(uint interval_ms);
+
+public slots:
+    void onUserInputReceived(QString input);                                                //处理用户输入
 
 signals:
     void SendMessage(QString msg);
@@ -145,6 +150,7 @@ signals:
     void UpdateFlow(uint flow);                                                             //通知主界面更新流量信息
 
     void EmergencyStopTriggered();
+    void UserInputReceived(QString input);                                                  //用户输入
 
 private slots:
     void RefreshPort();
@@ -187,11 +193,14 @@ private:
     QList<QByteArray> wrtCmdList;
     QByteArray readBuffer;
     QMap<DEVICE_CODE, QPoint> m_currentPos;
-    QAtomicInt m_emergencyFlag{0}; // 原子操作的急停标志
-    QMap<QString, ReagentConfig> m_reagentConfigs; // 试剂配置映射
-    QMap<QString, SampleConfig> m_sampleConfigs; // 样品配置映射
-    uint m_pumpInterval; // 加液和抽液之间的时间间隔(ms)
-    QAtomicInt m_shouldStop{0}; // 停止标志，用于中断长时间操作
+    QAtomicInt m_emergencyFlag{0};                                                          // 原子操作的急停标志
+    QMap<QString, ReagentConfig> m_reagentConfigs;                                          // 试剂配置映射
+    QMap<QString, SampleConfig> m_sampleConfigs;                                            // 样品配置映射
+    uint m_pumpInterval;                                                                    // 加液和抽液之间的时间间隔(ms)
+    QAtomicInt m_shouldStop{0};                                                             // 停止标志，用于中断长时间操作
+    
+    bool m_waitingForInput{false};                                                          // 是否正在等待用户输入
+    QString m_userInput;                                                                    // 存储用户输入
 
 
 };
